@@ -14,20 +14,16 @@ from pathlib import Path
 
 from logger_lab.logging_kernel.formatters import build_file_formatter
 from logger_lab.logging_kernel.handlers import configure_handler, get_log_dir
+from logger_lab.logging_kernel.constants import DEFAULT_LOG_DIR, DEFAULT_FILENAME, DEFAULT_ENCODING
 
-#: Default log file name written inside the log directory.
-_DEFAULT_FILENAME = "app.log"
-
-#: Default log directory — relative to the current working directory.
-_DEFAULT_LOG_DIR = Path("logs")
 
 # noinspection PyUnusedLocal
 def file_experiment(
         level: int = DEBUG,
         *,
-        log_dir: Path | str = _DEFAULT_LOG_DIR,
-        filename: str = _DEFAULT_FILENAME,
-        encoding: str = "utf-8",
+        log_dir: Path | str = DEFAULT_LOG_DIR,
+        filename: str       = DEFAULT_FILENAME,
+        encoding: str       = DEFAULT_ENCODING,
         **kwargs: object,
 ) -> list[Handler]:
     """
@@ -44,7 +40,7 @@ def file_experiment(
         log_dir:  Directory in which to create the log file.
                   Defaults to ``logs/`` relative to the cwd.
         filename: Name of the log file inside *log_dir*.
-                  Defaults to ``"app.log"``.
+                  Defaults to ``DEFAULT_FILENAME``.
         encoding: File encoding.  Defaults to ``"utf-8"``.
         **kwargs: Reserved for future extension.
     Returns:

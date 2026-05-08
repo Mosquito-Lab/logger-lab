@@ -23,29 +23,19 @@ from logging.handlers import RotatingFileHandler
 
 from logger_lab.logging_kernel.formatters import build_file_formatter
 from logger_lab.logging_kernel.handlers import configure_handler, get_log_dir
-
-#: Default log file name.
-_DEFAULT_FILENAME = "app.log"
-
-#: Default log directory.
-_DEFAULT_LOG_DIR = Path("logs")
-
-#: Default maximum file size before rotation: 5 MiB.
-_DEFAULT_MAX_BYTES: int = 5 * 1024 * 1024
-
-#: Default number of rotated backup files to retain.
-_DEFAULT_BACKUP_COUNT: int = 3
+from logger_lab.logging_kernel.constants import (DEFAULT_LOG_DIR, DEFAULT_FILENAME, DEFAULT_MAX_BYTES,
+                                                 DEFAULT_BACKUP_COUNT, DEFAULT_ENCODING)
 
 
 # noinspection PyUnusedLocal
 def rotating_file_experiment(
         level: int = DEBUG,
         *,
-        log_dir: Path | str = _DEFAULT_LOG_DIR,
-        filename: str = _DEFAULT_FILENAME,
-        max_bytes: int = _DEFAULT_MAX_BYTES,
-        backup_count: int = _DEFAULT_BACKUP_COUNT,
-        encoding: str = "utf-8",
+        log_dir: Path | str = DEFAULT_LOG_DIR,
+        filename: str       = DEFAULT_FILENAME,
+        max_bytes: int      = DEFAULT_MAX_BYTES,
+        backup_count: int   = DEFAULT_BACKUP_COUNT,
+        encoding: str       = DEFAULT_ENCODING,
         **kwargs: object,
 ) -> list[Handler]:
     """
@@ -61,7 +51,7 @@ def rotating_file_experiment(
         log_dir:      Directory in which to create the log file.
                       Defaults to ``logs/`` relative to the cwd.
         filename:     Name of the log file inside *log_dir*.
-                      Defaults to ``"app.log"``.
+                      Defaults to ``DEFAULT_FILENAME``.
         max_bytes:    File size threshold for rotation, in bytes.
                       Defaults to 5 MiB (``5_242_880``).
         backup_count: Number of rotated files to retain.

@@ -6,7 +6,8 @@
 
 **logging should be modular, readable, and adaptable — for both humans and machines.**
 
-Instead of writing repetitive logging setup, you select from **experiments**, apply **profiles**, or compose your own logger by assembling them like a system.
+Instead of writing repetitive logging setup, you select from **experiments**, apply **profiles**,
+or compose your own logger by assembling them like a system.
 
 ---
 
@@ -21,13 +22,36 @@ pip install logger-lab
 ## ⚡ Quick Start
 
 ```python
-from logger_lab import get_logger, ProfileType
+from logger_lab import get_logger
 
-logger = get_logger(__name__, profile=ProfileType.INVESTIGATOR)
+logger = get_logger(__name__, profile="INVESTIGATOR")
 
 logger.info("System online")
 logger.debug("Inspecting state")
 logger.error("Something broke")
+```
+
+### Summary of usage
+Both enums and strings can be used as parameters for both get_logger() and lab():
+
+```python
+import logging
+from logger_lab import lab, get_logger,  ExperimentType
+
+# Profiles (prebuilt combinations):
+profile_logger = get_logger(name="profile_test", profile="conspiracy_theorist")
+
+# Experiments (single handler factories):
+experiment_logger = get_logger(name="experiment_test", experiment=ExperimentType.MINIMALIST)
+
+# Fluent builder (custom composition):
+built_logger = (
+    lab()
+    .with_experiment('STANDARD')
+    .with_experiment(ExperimentType.FILE)
+    .with_level(logging.DEBUG)
+    .build(__name__)
+)
 ```
 
 ---
@@ -50,9 +74,9 @@ Each experiment controls exactly one thing: how logs are formatted and where the
 ### Using a single experiment
 
 ```python
-from logger_lab import get_logger, ExperimentType
+from logger_lab import get_logger
 
-logger = get_logger(__name__, experiment=ExperimentType.MINIMALIST)
+logger = get_logger(__name__, experiment="minimalist")
 logger.info("Ready")
 ```
 
@@ -77,14 +101,6 @@ payload = "super dangerous and malicious payload!"
 logger = get_logger(__name__, profile=ProfileType.CONSPIRATOR)
 logger.debug("Payload received: %s", payload)
 logger.error("Unexpected response", exc_info=True)
-```
-
-Brushing up the logic for using strings and not enums:
-
-```python
-from logger_lab import get_logger
-
-logger = get_logger(__name__, profile="CONSPIRACY_THEORIST")
 ```
 
 ---
@@ -242,7 +258,8 @@ logger_lab/
 └── logging_kernel/       ← shared infrastructure
     ├── errors.py         ← full exception hierarchy
     ├── formatters.py     ← JSONFormatter, log_event(), formatter factories
-    └── handlers.py       ← _configure_handler(), normalise_*(), get_log_dir()
+    ├── handlers.py       ← _configure_handler(), get_log_dir()
+    └── normalisers.py    ← normalises all params,
 ```
 
 ---
@@ -323,7 +340,5 @@ MIT LICENSE
 
 ## 🌱 Status
 
-`v0.1.0` — Active development. New experiments, profiles, and capabilities are being added continuously.
-
-## Bugs
-Still handling the file stuff but it works. Just handling the defaults and placing the file logic is left.
+STABLE RELEASE: `v0.1.1`
+* Still in active development. New experiments, profiles, and capabilities are being added continuously.

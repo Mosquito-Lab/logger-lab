@@ -1,12 +1,10 @@
 from logging import INFO, Logger, getLogger
 
+from logger_lab.logging_kernel.errors import BuilderError
+from logger_lab.logging_kernel.handlers import clear_handlers
 from logger_lab.core.enums import ExperimentType, ProfileType, TheoryType
 from logger_lab.core.registry import get_experiment, get_profile, get_theory
-from logger_lab.logging_kernel.errors import BuilderError
-from logger_lab.logging_kernel.handlers import (
-    clear_handlers,
-    normalise_exp_name, normalise_level_name, normalise_profile_name,
-)
+from logger_lab.logging_kernel.normalisers import normalise_level_name, normalise_exp_name, normalise_profile_name
 
 
 class LabBuilder:
@@ -46,7 +44,7 @@ class LabBuilder:
             lab().with_experiment("standard").with_experiment(ExperimentType.AI)
         """
 
-        if type(experiment) is TheoryType:
+        if isinstance(experiment, TheoryType):
             self._experiments.append(experiment)
 
         else:
@@ -139,8 +137,8 @@ class LabBuilder:
 
         # Apply profile first — steal its handlers onto our logger.
         if self._profile is not None:
-            profile_factory = get_profile(self._profile)
-            profile_logger = profile_factory(name + ".__profile__", self._level)
+            _profile = get_profile(self._profile)
+            profile_logger = _profile(name + ".__profile__", self._level)
 
             for handler in profile_logger.handlers:
                 logger.addHandler(handler)
@@ -151,7 +149,7 @@ class LabBuilder:
         for exp_type in self._experiments:
 
             # TEST A THEORY
-            if type(exp_type) is TheoryType:
+            if isinstance(exp_type, TheoryType):
                 experiment = get_theory(exp_type)
 
             else:

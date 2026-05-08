@@ -7,7 +7,7 @@ import logging
 from logger_lab import lab, get_logger, log_event, ExperimentType, ProfileType
 
 # Profiles (prebuilt combinations):
-profile_logger = get_logger(name="profile_test", profile=ProfileType.INVESTIGATOR)
+profile_logger = get_logger(name="profile_test", profile="conspiracy_theorist")
 
 # Experiments (single handler factories):
 experiment_logger = get_logger(name="experiment_test", experiment=ExperimentType.MINIMALIST)
@@ -15,7 +15,7 @@ experiment_logger = get_logger(name="experiment_test", experiment=ExperimentType
 # Fluent builder (custom composition):
 built_logger = (
     lab()
-    .with_experiment(ExperimentType.MINIMALIST)
+    .with_experiment('STANDARD')
     .with_experiment(ExperimentType.FILE)
     .with_level(logging.DEBUG)
     .build(__name__)

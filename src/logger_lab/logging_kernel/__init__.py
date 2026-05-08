@@ -30,9 +30,11 @@ from logger_lab.logging_kernel.handlers import (
     configure_handler,
     clear_handlers,
     get_log_dir,
-    normalise_exp_name,
-    normalise_level_name,
+)
+from logger_lab.logging_kernel.normalisers import (
     normalise_profile_name,
+    normalise_level_name,
+    normalise_exp_name
 )
 
 __all__ = [
@@ -54,15 +56,16 @@ __all__ = [
     # builder errors
     "BuilderError",
     # formatters
+    "log_event",
     "JSONFormatter",
     "build_file_formatter",
     "build_console_formatter",
-    "log_event",
     # handler utilities
+    "get_log_dir",
     "clear_handlers",
     "configure_handler",
-    "normalise_level_name",
+    # normalisers
     "normalise_exp_name",
-    "normalise_profile_name",
-    "get_log_dir",
+    "normalise_level_name",
+    "normalise_profile_name"
 ]

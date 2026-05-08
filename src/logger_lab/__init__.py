@@ -1,44 +1,4 @@
-"""
-logger-lab — composable Python logging, reimagined as a system.
-
-Quick start
------------
-
-**Profiles** (prebuilt combinations)::
-
-    from logger_lab import get_logger
-
-    logger = get_logger(__name__, profile="investigator")
-    logger.info("System online")
-
-**Experiments** (single handler factories)::
-
-    logger = get_logger(__name__, experiment="standard")
-
-**Fluent builder** (custom composition)::
-
-    from logger_lab import lab
-
-    logger = (
-        lab()
-        .with_experiment("standard")
-        .with_experiment("file")
-        .with_level("DEBUG")
-        .build(__name__)
-    )
-
-**Structured events** (AI / machine-readable output)::
-
-    from logger_lab import get_logger, log_event
-    import logging
-
-    logger = get_logger(__name__, profile="ai_agent")
-    log_event(
-        logger, logging.INFO, "Inference complete",
-        event="inference_done",
-        context={"tokens": 512},
-    )
-"""
+""" logger-lab — composable Python logging, reimagined as a system """
 
 from logging import DEBUG, Logger
 
@@ -62,11 +22,6 @@ from logger_lab.logging_kernel.errors import (
     ProfileRegistrationError,
 )
 from logger_lab.logging_kernel.formatters import log_event
-from logger_lab.logging_kernel.handlers import (
-    normalise_exp_name,
-    normalise_level_name,
-    normalise_profile_name,
-)
 
 __all__ = [
     # primary entry points

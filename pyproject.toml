@@ -1,7 +1,7 @@
 [project]
 name = "logger-lab"
 version = "0.1.1"
-description = "Custmon loggers to make debugging easy"
+description = "Custom loggers to make debugging easy"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -76,7 +76,9 @@ yet**, led by promoting time rotation, context, and process-safe logging.
 3. LabFrame adopts the `gui` profile; promote `TIMED_FILE`.
 4. Cleanliness passes 1–8, so every module meets the standard before new
    features land on it.
-5. `TRACE` (context and correlation IDs), then process safety on the dispatch
+5. The feedback layer: `TRACE` (context and correlation IDs) with `LIFECYCLE`
+   (standard feedback events), then `THROTTLE` (rate limits for subscribers),
+   `PERFORMANCE`, and process safety (`PROCESS`) on the dispatch
    queue.
 6. Configuration from env or a dict, and an exception helper.
 7. Then the specialised theories: `PERFORMANCE`, `HTTP`, `SEC`, `DB`.

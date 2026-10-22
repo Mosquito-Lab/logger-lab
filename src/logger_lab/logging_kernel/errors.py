@@ -199,7 +199,7 @@ class InvalidTheoryName(LabRegistryError):
     Example::
         raise InvalidTheoryName("ghost")
         # InvalidTheoryName: 'ghost' is not a recognized theory name.
-        # Valid names: DB, HTTP, PERFORMANCE, SEC, TIMED_FILE, TRACE
+        # Valid names: DB, HTTP, LIFECYCLE, PERFORMANCE, PROCESS, SEC, THROTTLE, TIMED_FILE, TRACE
     """
 
     def __init__(self, name: object) -> None:

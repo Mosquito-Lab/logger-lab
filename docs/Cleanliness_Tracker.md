@@ -97,15 +97,15 @@ everything it imports.
 
 | # | Pass | Files | LOC | Clean | Eff | Open findings | Status |
 |---|---|---:|---:|---:|---:|---:|---|
-| 1 | `logging_kernel` | 7 | 1,276 + new | — | — | 0 | **in review** (1 of 7 closed) |
+| 1 | `logging_kernel` | 7 | 1,276 + new | — | — | 1 | **in review** (1 of 7 closed) |
 | 2 | `core` | 4 | 855 | — | — | 0 | pending |
-| 3 | `experiments` | 9 | 385 + new | — | — | 0 | pending |
+| 3 | `experiments` | 9 | 385 + new | — | — | 1 | pending |
 | 4 | `profiles` | 7 | 231 + new | — | — | 0 | pending |
-| 5 | `theories` | 8 | 74 ± | — | — | 0 | pending |
+| 5 | `theories` | 11 | 74 ± | — | — | 0 | pending |
 | 6 | Package root | 3 | 222 | — | — | 0 | pending |
 | 7 | `tests/` | 13 | 813 + new | — | — | 0 | pending |
-| 8 | README + `docs/` | 6 | 1,630 | — | — | 0 | pending |
-| — | **Total** | **56** | **5,486 at `3adfa9c`, + new files** | | | **0** | 0 of 8 closed |
+| 8 | README + `docs/` | 7 | 1,630 | — | — | 0 | pending |
+| — | **Total** | **60** | **5,486 at `3adfa9c`, + new files** | | | **2** | 0 of 8 closed |
 
 LOC counted 2026-10-22 at `3adfa9c` (0.2.0), before any pass. Files added
 after that commit (async, relay, `gui`, `TIMED_FILE`; still 0.2.0) are marked
@@ -130,7 +130,7 @@ Order: `constants` → `errors` → `formatters` → `handlers` → `dispatch` �
 | 1.2 | `errors.py` | 499 | — | — | partial | — (fixed: `KN-4`, `KN-9`) | pending |
 | 1.3 | `formatters.py` | 152 | — | — | partial | — (fixed: `KN-6`, `KN-7`, `KN-9`, `KN-11`, `KN-17`) | pending |
 | 1.4 | `handlers.py` | 354 | — | — | ✓ | — (fixed: `KN-5`, `KN-7`, `KN-16`) | pending |
-| 1.4b | `dispatch.py` *(new after `3adfa9c`)* | 239 | — | — | ✓ | — (fixed: `KN-18`) | pending |
+| 1.4b | `dispatch.py` *(new after `3adfa9c`)* | 239 | — | — | ✓ | `KN-19` (fixed: `KN-18`) | pending |
 | 1.5 | `normalizers.py` | 166 | — | — | partial | — (fixed: `KN-2`, `KN-3`, `KN-7`, `KN-8`) | pending |
 | 1.6 | `__init__.py` | 104 | — | — | n/a | — | pending |
 
@@ -163,7 +163,7 @@ live, then the dispatcher).
 | 3.4 | `ai.py` | 53 | — | — | ✓ | — | pending |
 | 3.5 | `file.py` | 76 | — | — | ✓ | — | pending |
 | 3.6 | `rotating_file.py` | 101 | — | — | ✓ | — | pending |
-| 3.6b | `relay.py` *(new after `3adfa9c`)* | 69 | — | — | ✓ | — | pending |
+| 3.6b | `relay.py` *(new after `3adfa9c`)* | 69 | — | — | ✓ | `EX-7` | pending |
 | 3.6c | `asynchronous.py` *(new after `3adfa9c`)* | 60 | — | — | ✓ | — | pending |
 | 3.7 | `__init__.py` | 15 | — | — | n/a | — (fixed: `EX-4`) | pending |
 
@@ -188,22 +188,25 @@ Fixed before the pass: `PF-1`.
 
 ### 5. theories: pending
 
-Order: `timed_file_exp` → `trace_exp` → `performance_exp` → `http_exp` →
-`sec_exp` → `db_exp` (the roadmap's rank order) → `_test_theory` →
-`__init__`. The five idea files are reviewed against the Idea stage format
-(Standards §3.4), not as working code. (`async_exp.py` was removed when ASYNC
+Order: `timed_file_exp` → `trace_exp` → `lifecycle_exp` → `throttle_exp` →
+`performance_exp` → `process_exp` → `http_exp` → `sec_exp` → `db_exp` (the
+roadmap's rank order, D-20) → `_test_theory` → `__init__`. The eight idea files
+are reviewed against the Idea stage format (Standards §3.4), not as working code. (`async_exp.py` was removed when ASYNC
 was promoted.)
 
 | # | File | LOC | Clean | Eff | Tests | Open findings | Status |
 |---|---|---:|---:|---:|---|---|---|
 | 5.1 | `timed_file_exp.py` *(trial, after `3adfa9c`)* | 84 | — | — | ✓ | — | pending |
-| 5.2 | `trace_exp.py` | 1 | — | — | n/a | — (fixed: `TH-3`) | pending |
-| 5.3 | `performance_exp.py` | 2 | — | — | n/a | — (fixed: `TH-3`) | pending |
-| 5.4 | `http_exp.py` | 2 | — | — | n/a | — (fixed: `TH-3`) | pending |
-| 5.5 | `sec_exp.py` | 2 | — | — | n/a | — (fixed: `TH-3`) | pending |
-| 5.6 | `db_exp.py` | 1 | — | — | n/a | — (fixed: `TH-3`) | pending |
-| 5.7 | `_test_theory.py` | 33 | — | — | n/a | — | pending |
-| 5.8 | `__init__.py` | 0 | — | — | n/a | — | pending |
+| 5.2 | `trace_exp.py` | 9 | — | — | n/a | — (fixed: `TH-3`) | pending |
+| 5.3 | `lifecycle_exp.py` *(new after `00d28fd`)* | 13 | — | — | n/a | — (Idea stage) | pending |
+| 5.4 | `throttle_exp.py` *(new after `00d28fd`)* | 12 | — | — | n/a | — (Idea stage) | pending |
+| 5.5 | `performance_exp.py` | 8 | — | — | n/a | — (fixed: `TH-3`) | pending |
+| 5.6 | `process_exp.py` *(new after `00d28fd`)* | 11 | — | — | n/a | — (Idea stage) | pending |
+| 5.7 | `http_exp.py` | 8 | — | — | n/a | — (fixed: `TH-3`) | pending |
+| 5.8 | `sec_exp.py` | 8 | — | — | n/a | — (fixed: `TH-3`) | pending |
+| 5.9 | `db_exp.py` | 8 | — | — | n/a | — (fixed: `TH-3`) | pending |
+| 5.10 | `_test_theory.py` | 33 | — | — | n/a | — | pending |
+| 5.11 | `__init__.py` | 4 | — | — | n/a | — | pending |
 
 Fixed before the pass: `TH-1`, `TH-2`.
 
@@ -261,6 +264,7 @@ Order: `README.md` → `API_Reference.md` → `Standards_and_Tracker.md` →
 | 8.3 | `docs/Standards_and_Tracker.md` | 350 | — | — | pending |
 | 8.4 | `docs/Continuation.md` | 164 | — | — | pending |
 | 8.5 | `docs/Framework_Comparison.md` | 90 | — | — | pending |
+| 8.5b | `docs/Feedback_Guide.md` *(new after `3adfa9c`)* | 281 | — | — | pending |
 | 8.6 | `docs/Cleanliness_Tracker.md` | 272 | — | — | pending |
 
 Fixed before the pass: `DOC-1`, `DOC-2`. (`PK-5`, whether these docs ship in
@@ -317,6 +321,8 @@ the wheel, is decided in pass 6.)
 | KN-15 | Correctness | `logging_kernel/constants.py` | Reassigning a constant at runtime does nothing, because the defaults are fixed in function signatures when they're defined (verified: `file_experiment` keeps `logs`). A consumer could try it and fail silently. | **Done (1.1):** the module docstring says so and points to `with_file_args()`. `Final` was declined by the owner as unnecessary. | fixed |
 | KN-17 | Design | `logging_kernel/formatters.py` | `JSONFormatter` drops exceptions: `exc_info`, `exc_text` and `stack_info` are excluded as standard attributes and never serialized, so `logger.exception()` through `ai` gives JSON with no traceback (verified 2026-10-22). It predates the async work (async itself keeps `exc_info`; text outputs write the traceback). | Owner, 2026-10-22. **Done:** `"exception": {type, message, traceback}` and `"stack"` (Standard v1.1); tests for both, and end to end through `async`. | fixed |
 | KN-18 | Consistency | `logging_kernel/dispatch.py` | Comments for `DISPATCHERS`, `pending`/`pending_changed` and `worker`/`worker_lock`/`exit_hook_registered` sit on the lines above them, against the owner's comment rule (a constant's comment goes on its own line). Written during the async work, after the rule was added. | **Done:** plain `#` on each constant's line. | fixed |
+| EX-7 | Correctness | `experiments/relay.py` | A subscriber that logs to a logger which relays back to it re-enters itself without end: one `info()` produced 50 records before a probe's cap (2026-10-22). Documented in `Feedback_Guide.md` §3. | Owner's call: a re-entry guard in `RelayHandler` (skip records logged *from inside* a subscriber on the same thread), or keep it documented | open |
+| KN-19 | Design | `logging_kernel/dispatch.py` | One worker thread means one slow output delays every async logger: a 200 ms subscriber held back a record on an unrelated logger by about 212 ms (2026-10-22). This is the trade-off for strict ordering and one thread. Documented in `Feedback_Guide.md` §3. | Owner's call: keep and document (done); or later, per-subscriber hand-off queues / a timeout warning | open |
 | KN-16 | Consistency | `logging_kernel/handlers.py` | Six `#:` comments sit above their constants (`UNNAMED`, `HandlerT`, `SHARED_FILES`, `LAB_HANDLERS`, `SHARED_FILES_LOCK`), against the owner's comment rule: plain `#`, on the same line. | **Done:** plain `#` on each constant's line. | fixed |
 | EX-6 | Consistency | `experiments/verbose.py` | Two `#:` comments sit above `_VERBOSE_FMT` and `_DATE_FMT`, against the owner's comment rule: plain `#`, on the same line. | **Done:** plain `#` on each constant's line. | fixed |
 | PF-4 | Consistency | `profiles/observer.py`, `investigator.py`, `conspiracy_theorist.py`, `ai_agent.py` | Each `*_EXPERIMENTS` tuple has a `#:` comment above it, against the owner's comment rule: plain `#`, on the same line. | **Done:** plain `#` on each tuple's line. | fixed |

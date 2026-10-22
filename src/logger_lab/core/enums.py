@@ -48,7 +48,10 @@ class TheoryType(Enum):
 
     DB          = "DB"
     HTTP        = "HTTP"
+    LIFECYCLE   = "LIFECYCLE"
     PERFORMANCE = "PERFORMANCE"
+    PROCESS     = "PROCESS"
     SEC         = "SEC"
+    THROTTLE    = "THROTTLE"
     TIMED_FILE  = "TIMED_FILE"
     TRACE       = "TRACE"

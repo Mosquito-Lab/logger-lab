@@ -237,6 +237,8 @@ loggers while others are logging — a logger switches to its new handlers in on
 
 ## ⚡ Async logging
 
+> How async, subscribers and Qt fit together, with the guarantees and limits: [`docs/Feedback_Guide.md`](docs/Feedback_Guide.md).
+
 Add `async` and the calling thread only queues each record; one worker thread for the whole
 process formats and writes it, in order, to the logger's outputs:
 
@@ -501,7 +503,7 @@ theory_logger = (
 | Theory       | Stage       | What it does                                                         |
 |--------------|-------------|----------------------------------------------------------------------|
 | `TIMED_FILE` | trial       | Time-based rotation (`TimedRotatingFileHandler`), shared like `file` |
-| others       | placeholder | `TRACE`, `PERFORMANCE`, `HTTP`, `SEC`, `DB` — raise `TheoryNotFoundError` |
+| others       | placeholder | In roadmap order: `TRACE`, `LIFECYCLE`, `THROTTLE`, `PERFORMANCE`, `PROCESS`, `HTTP`, `SEC`, `DB`; they raise `TheoryNotFoundError` |
 
 These are unstable and may change.
 
@@ -545,8 +547,9 @@ To make it selectable by name, register it (`register_profile`) — currently on
 
 * [x] `async` and `relay` experiments, `gui` profile
 * [ ] Promote `timed_file` (in trial)
-* [ ] More experiments (`trace`, `performance`, `http`, `sec`, `db`)
-* [ ] Process-safe logging (several processes, one file)
+* [ ] The feedback layer: `trace` (correlation IDs), `lifecycle` (started / progress / done / failed events), `throttle` (rate limits for subscribers)
+* [ ] `performance`, then process-safe logging (`process`)
+* [ ] Specialised: `http`, `sec`, `db`
 * [ ] Advanced profiles
 * [ ] AI-assisted debugging tools
 * [ ] Distributed tracing support

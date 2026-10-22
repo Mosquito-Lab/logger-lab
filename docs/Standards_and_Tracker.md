@@ -11,6 +11,7 @@ is held to it.
 | `Cleanliness_Tracker.md` | The file-by-file review ledger: scores, finding IDs, decisions, fixes |
 | `Continuation.md` | Status, roadmap, the theory pipeline and open design decisions |
 | `API_Reference.md` | The public API and the composition logic |
+| `Feedback_Guide.md` | How records reach people, files, machines and live UIs: async, subscribers, Qt and other event loops, with guarantees and limits |
 | `Framework_Comparison.md` | Where logger-lab stands against other logging libraries |
 
 Status and task order live **only** in `Continuation.md`. Findings live **only**

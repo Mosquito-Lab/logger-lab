@@ -101,6 +101,8 @@ Every experiment and profile is thread-safe within one process:
 
 ### Async dispatch
 
+The full picture (record flow, limits, Qt, asyncio, Tkinter) is in `Feedback_Guide.md`.
+
 | | Without `async` | With `async` |
 | --- | --- | --- |
 | Who formats and writes | the thread that logged | the `logger-lab-dispatch` worker |
@@ -240,7 +242,7 @@ when `minimalist` is part of the logger (so `observer`). That holds through
 | `TheoryType` | Stage | Channel | Options (`with_theory(..., **options)`) |
 | --- | --- | --- | --- |
 | `TIMED_FILE` | **trial** | FILE | `when="midnight"`, `interval=1`, `utc=False`, `at_time=None`; plus file args `log_dir`/`filename`/`encoding`/`backup_count` |
-| `TRACE`, `PERFORMANCE`, `HTTP`, `SEC`, `DB` | placeholder | — | — |
+| `TRACE`, `LIFECYCLE`, `THROTTLE`, `PERFORMANCE`, `PROCESS`, `HTTP`, `SEC`, `DB` | placeholder | — | — (roadmap order: `Continuation.md` §3) |
 
 `ASYNC` has been promoted to an experiment. Try a theory with:
 

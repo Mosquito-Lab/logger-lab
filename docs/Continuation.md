@@ -106,41 +106,78 @@ Each step is proposed, approved, done, verified, and then recorded in
 | 4 | Enum and value names pinned for every member; README and docs corrected | `DOC-1` | Case-insensitive: kept | **Done** |
 | 5 | Theory rework: `register_theory()`, `TheoryNotFoundError`/`InvalidTheoryName`, `normalize_theory_name()`, `with_theory(**options)`, the `__main__` harness, the placeholder stage | `CR-2`, `TH-1`, `TH-2` | D-2, settled; placeholders not registered | **Done** |
 
-**Awaiting:** the owner's review of the code preview, and the go-ahead to
-commit.
+Phase 1 is done and committed (`00d28fd`).
 
-The remaining findings (`KN-*`, `CR-3`…`CR-8`, `EX-*`, `PF-2/3`, `TH-3`, `PK-*`)
-are handled in the cleanliness passes after Phase 1.
+### Where logger-lab stands (review, 2026-10-22)
 
-### Phase 2: the theory pipeline
+logger-lab is a **feedback system**, not only a debugging tool: every record is
+feedback for a person at a terminal, whoever reads the files later, a machine
+(JSON), or a live UI (relay subscribers). `Feedback_Guide.md` describes how
+records travel.
 
-Ranked by value against cost.
+- **Strong:** one composer (`lab()`), channels and composition rules, one
+  handler per file across loggers, thread-safe, non-blocking `async` with
+  tracebacks kept, live subscribers, JSON v1.1. 181 tests, **95% line
+  coverage** (737 statements), pyrefly clean, concurrency tests shown to fail
+  without their fix, verified on Windows and against LabFrame's real PySide6.
+- **Gaps, in order of importance:**
+  1. **No shared language for feedback.** Records travel, but "started / 40%
+     / done / failed" has no standard shape, so LabFrame invents its own
+     conventions.
+  2. **No correlation:** nothing ties one job's or request's records together.
+  3. **Delivery is fragile under misuse:** a subscriber that logs to its own
+     logger feeds itself (`EX-7`); one slow output delays all async logging
+     (`KN-19`); the queue is unbounded; there's no rate limiting.
+  4. **One process only,** and configuration is code-only.
+  5. **Not shipped:** 0.2.0 exists only on `release/v0.2.0`; LabFrame must
+     switch from `get_logger` before it can upgrade.
+  6. **Positioning:** `pyproject.toml` still says "Custom loggers to make
+     debugging easy".
 
-| Rank | Theory | Mechanism | Status / why this position | Depends on |
+### Phase 2: ship 0.2.0
+
+| Step | Task | Why |
+| --- | --- | --- |
+| 2.1 | Re-entry guard in `RelayHandler` (`EX-7`) | Cheap, and stops a subscriber from feeding itself without end |
+| 2.2 | Promote `TIMED_FILE`: a concurrency test, then an `ExperimentType` value | It's been in trial since 0.2.0 and only needs the thread-safety test |
+| 2.3 | Positioning: the `pyproject` description and README tagline describe feedback | So users understand what it's for (owner's framing, 2026-10-22) |
+| 2.4 | Merge to `main`, publish 0.2.0 to PyPI | Consumers are still on 0.1.1 |
+| 2.5 | LabFrame adopts the `gui` profile (§5) | Required: 0.2.0 removes the `get_logger` call it uses |
+
+### Phase 3: the feedback layer (the theory pipeline)
+
+Ranked by value against cost (owner-approved ranking, 2026-10-22, D-20).
+Ranks 1 and 2 go together: they turn logger-lab from "where logs go" into
+"feedback".
+
+| Rank | Theory | What it gives | Why this position | Depends on |
 | --- | --- | --- | --- | --- |
-| 1 | **`TIMED_FILE`** | `TimedRotatingFileHandler`, shared via `share_file_handler()` | **Trial since 0.2.0.** Registered, tested (defaults, options, forced rollover, sharing, clashes, behind `async`). To promote: a concurrency test, a pass row, an `ExperimentType` value. | — |
-| 2 | **`TRACE`** | `logging.Filter` + `contextvars` that inject `trace_id`/`span_id` | Next. Answers LabFrame's "no correlation-id convention" note (`job_id`). Fits straight into `JSONFormatter`'s `extra`. Pure stdlib. | None |
-| ✔ | **`ASYNC`** | Own queue + one worker (`logging_kernel.dispatch`) | **Promoted to an experiment in 0.2.0** (with `relay`, for the `gui` profile). The stdlib `QueueHandler`/`QueueListener` were rejected: `prepare()` strips tracebacks, and each listener needs its own thread. | — |
-| 4 | **`PERFORMANCE`** | `@timed` decorator that emits duration through `log_event` | Small and very visible. Builds on `TRACE` context if it exists. | `TRACE` (optional) |
-| 5 | **`HTTP`** | Filter that injects method, path, status and latency from request context | Useful, but it depends on the framework. Use `contextvars` (from `TRACE`), not thread-locals. | `TRACE` |
-| 6 | **`SEC`** | Separate append-only audit stream that is tamper-evident (hash-chained lines) | Valuable but needs a real design (key handling, verification tool). | `TIMED_FILE` / file args |
-| 7 | **`DB`** | SQLAlchemy event hooks + redaction filter | Adds a heavy dependency, so it must be an optional extra (`logger-lab[db]`). Do it last. | Optional-deps policy (D-5) |
+| 1 | **`TRACE`** | A `job_id` / `trace_id` on every record, from `contextvars` | Ties feedback to a job or request; answers LabFrame's correlation-ID note. **Constraint (measured):** context must be stamped on the **caller's** thread (a logger-level filter, or while `AsyncHandler` freezes the record); a filter on an output runs on the dispatch worker and sees no context. New threads don't inherit `contextvars`, so job runners must copy the context in (`contextvars.copy_context().run`), which LabFrame's `JobManager.submit` could do. | — |
+| 2 | **`LIFECYCLE`** *(new)* | A standard shape for feedback events (`started`, `progress` with a fraction, `succeeded`, `failed`, `cleared`) and a helper on top of `log_event` | Lets subscribers drive a UI from records alone: LabFrame's channels could react to these events instead of their own level conventions, and a console output could draw a Rich progress bar from them. | `TRACE` (for the job ID) |
+| 3 | **`THROTTLE`** *(new)* | Coalescing and rate limits per subscriber ("…repeated 120×", records per second) | Stops a tight error loop flooding a GUI (LabFrame note), and eases `KN-19`: fewer, larger batches hold the one worker for less time. | `relay` |
+| 4 | **`PERFORMANCE`** | `@timed` durations, emitted as lifecycle events | Small, very visible, and plugs into ranks 1–2 | `TRACE`, `LIFECYCLE` |
+| 5 | **`PROCESS`** *(new)* | Several processes, one log file: a single writer process owns the files | multiprocessing pools and several app instances. Bigger: records cross the process boundary pickled, with message and traceback already turned into text. Likely a dispatcher next to `async`. | the dispatch queue |
+| 6 | **`HTTP`** | Request context (method, path, status, latency) on records | Specialised to web services | `TRACE` |
+| 7 | **`SEC`** | A tamper-evident, append-only audit stream (hash-chained lines) | Valuable, but needs a real design (keys, a verification tool) | the shared file handlers |
+| 8 | **`DB`** | Query logging with redaction (SQLAlchemy hooks) | A heavy dependency, so it must be an optional extra | D-5 |
 
-**Promotion rule (theory → experiment):** a theory is promoted once it has
-(a) the standard signature including `**kwargs`, (b) tests, (c) docstrings to
-the standard, and (d) a row in the API Reference. Promoting it means adding an
-`ExperimentType` value, moving the file to `experiments/` and adding it to the
-registration loop.
+`ASYNC` was promoted to an experiment in 0.2.0 (with `relay`, for the `gui`
+profile). The stdlib `QueueHandler`/`QueueListener` were rejected: `prepare()`
+strips tracebacks, and each listener needs its own thread.
 
-### Phase 3: new profiles and polish
+**Promotion rule (theory → experiment):** follows Standards §3.1, has tests
+including a concurrency test, docstrings to the standard, rows in the API
+Reference and README, can't clash, and has a cleanliness-pass row (Standards
+§3.4). Promoting means adding an `ExperimentType` value, moving the file to
+`experiments/` and adding it to the registration loop.
 
-- ~~**GUI profile**~~: shipped in 0.2.0 (`rotating_file` + `relay` + `async`).
-- **Process safety**: several processes writing one file, built on the
-  dispatch queue (one writer process).
-- **Rate limiting for GUI subscribers**: a relay option that coalesces floods
-  (LabFrame note).
-- Comparison-driven features (see the Framework Comparison doc): env/dict
-  configuration, `exception`/`catch` helpers, redaction filters.
+### Phase 4: after the feedback layer
+
+- Configuration from env or a dict (`lab().from_env()` / `from_dict()`).
+- An exception helper (`@lab_catch(logger)`).
+- Resume the cleanliness passes (scores; the harness's tests).
+- An optional parent-logger mode (CR-9 option B).
+- A capped async queue with a drop count, if a flood shows up (D-14).
 
 ---
 
@@ -160,6 +197,7 @@ registration loop.
 | D-13 | When the `gui` profile ships | **Locked in 2026-10-22 (owner):** now, with `ASYNC` and `RELAY` promoted to experiments in the same release. |
 | D-18 | Default level | **Locked in 2026-10-22 (owner):** INFO, and WARNING for `observer` and `minimalist` (any logger that includes `minimalist`). Invalid levels raise. |
 | D-19 | Is `get_logger()` still needed, or is `lab()` the one composer? | **Locked in 2026-10-22 (owner):** `lab()` is the only composer; `get_logger()` is removed in 0.2.0. |
+| D-20 | Roadmap and theory ranking | **Locked in 2026-10-22 (owner):** ship 0.2.0 first (Phase 2), then `TRACE` → `LIFECYCLE` → `THROTTLE` → `PERFORMANCE` → `PROCESS` → `HTTP` → `SEC` → `DB` (Phase 3). `LIFECYCLE`, `THROTTLE` and `PROCESS` added as placeholder theories. |
 | D-17 | Version for the async/relay/`gui`/`TIMED_FILE` work | **Locked in 2026-10-22 (owner):** it stays **0.2.0** (unpublished), not 0.2.0. |
 | D-14 | Async queue size | **Locked in 2026-10-22 (owner):** unbounded, like the stdlib. A capped queue with a drop count can come later if a flood shows up. |
 | D-15 | Subscriber API | **Locked in 2026-10-22 (owner):** `with_subscriber(callback, level=None)`, which brings `relay` with it. Callbacks get the `LogRecord`, read-only. |
@@ -177,8 +215,8 @@ registration loop.
 | No Qt-aware handler | **Done in 0.2.0:** `relay` + `with_subscriber()`. Pass a Qt signal's `emit`; logger-lab stays Qt-free. |
 | `standard`/`investigator` write to stdout, which disappears in windowed builds | **Done in 0.2.0:** the `gui` profile has no console. |
 | Feedback logging writes to disk on the GUI thread | **Done in 0.2.0:** `async` (inside `gui`). |
-| No correlation-id convention | `TRACE` (Phase 2, rank 2) |
-| No coalescing or rate limiting for GUI-facing handlers | Phase 3, a relay option |
+| No correlation-id convention | `TRACE` (Phase 3, rank 1) |
+| No coalescing or rate limiting for GUI-facing handlers | `THROTTLE` (Phase 3, rank 3) |
 
 **LabFrame adoption (a LabFrame-side change, once 0.2.0 is published, and
 required: 0.2.0 removes the `get_logger()` call LabFrame uses today):** in
@@ -209,13 +247,13 @@ rather than at import (today it runs when `LabFrame.feedback` is imported).
 
 ## 6. Next immediate action
 
-1. The owner reviews the code preview (async, relay, `gui`, `TIMED_FILE`, and every flagged fix, all 0.2.0) and says whether to commit.
-2. LabFrame adoption of the `gui` profile (§5), in the LabFrame repo.
-3. `TIMED_FILE` promotion, then `TRACE`. Cleanliness passes resume when the
-   owner says (paused 2026-10-22); every finding flagged so far is fixed.
+1. The owner reviews this change (the Feedback Guide, the roadmap, and the
+   three new placeholder theories) and says whether to commit.
+2. Phase 2: the `EX-7` re-entry guard, `TIMED_FILE` promotion, positioning,
+   publishing 0.2.0, and LabFrame adoption (§5).
+3. Phase 3, starting with `TRACE` + `LIFECYCLE` together.
 4. When Project A, LabFrame and Anime-Earth upgrade from 0.1.1: Project A's
    ~34 module loggers (`ROTATING_FILE` on `logs/app.log`) will share one
-   handler, which fixes their Windows rotation. LabFrame's feedback logger
-   (also `ROTATING_FILE`, default path) shares cleanly. An app mixing `FILE`
-   and `ROTATING` on one path will now raise `LogFileClashError` and needs its
-   own `filename`.
+   handler, which fixes their Windows rotation. LabFrame must replace its
+   `get_logger` call (§5). An app mixing `FILE` and `ROTATING` on one path will
+   now raise `LogFileClashError` and needs its own `filename`.

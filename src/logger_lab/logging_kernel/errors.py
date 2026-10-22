@@ -23,8 +23,8 @@ Hierarchy
     │   │   └── LogDirectoryError        filesystem mkdir/access failure
     │   ├── ExperimentClashError         two experiments claim the same channel
     │   ├── LogFileClashError            a file is already open with a different experiment
-    │   ├── ExperimentRegistrationError  callable doesn't satisfy ExperimentFactory
-    │   └── ProfileRegistrationError     callable doesn't satisfy ProfileFactory
+    │   ├── ExperimentRegistrationError  callable doesn't satisfy LabExperiment
+    │   └── ProfileRegistrationError     callable doesn't satisfy LabProfile
     └── BuilderError                     build() called with nothing queued
 
     DuplicateExperimentWarning (UserWarning)  same experiment queued twice; first kept
@@ -38,9 +38,8 @@ Design notes
 * ``HandlerConfigurationError`` and its subclass accept an optional
   ``cause`` that is chained via ``raise ... from cause`` at the
   raise-site, preserving the original traceback.
-* ``InvalidLevelError`` exists for callers who want to enforce strictness
-  but ``normalize_level_name`` keeps its INFO fallback — raise the class
-  yourself when you need strict behavior.
+* ``InvalidLevelError`` is raised by ``normalize_level_name`` for any unknown
+  level name or invalid number — there is no silent fallback.
 """
 
 ########
@@ -53,7 +52,7 @@ class LabError(Exception):
     Catch this to handle any error the library can raise::
 
         try:
-            logger = get_logger(__name__, profile="typo")
+            logger = lab().with_profile("typo").build(__name__)
         except LabError as exc:
             print(f"logger-lab error: {exc}")
     """
@@ -85,7 +84,7 @@ class ExperimentNotFoundError(LabRegistryError):
 
     Example::
         raise ExperimentNotFoundError(ExperimentType.AI)
-        # ExperimentNotFoundError: experiment 'ai' is a valid ExperimentType
+        # ExperimentNotFoundError: experiment 'AI' is a valid ExperimentType
         # but is not registered in EXPERIMENTS
     """
 
@@ -107,7 +106,7 @@ class ProfileNotFoundError(LabRegistryError):
     Example::
 
         raise ProfileNotFoundError(ProfileType.OBSERVER)
-        # ProfileNotFoundError: profile 'observer' is a valid ProfileType
+        # ProfileNotFoundError: profile 'OBSERVER' is a valid ProfileType
         # but is not registered in PROFILES
     """
 
@@ -128,8 +127,8 @@ class TheoryNotFoundError(LabRegistryError):
     Args:
         theory: The ``TheoryType`` value that was looked up.
     Example::
-        raise TheoryNotFoundError(TheoryType.ASYNC)
-        # TheoryNotFoundError: theory 'ASYNC' is still a placeholder — no factory
+        raise TheoryNotFoundError(TheoryType.TRACE)
+        # TheoryNotFoundError: theory 'TRACE' is still a placeholder — no factory
         # is registered in THEORIES yet
     """
 
@@ -144,7 +143,7 @@ class InvalidExperimentName(LabRegistryError):
     """Raised when a string cannot be coerced to any
     :class:`~logger_lab.core.enums.ExperimentType` value.
 
-    This fires in :func:`~logger_lab.logging_kernel.handlers.normalize_exp_name`
+    This fires in :func:`~logger_lab.logging_kernel.normalizers.normalize_exp_name`
     before a registry lookup is even attempted.
 
     Args:
@@ -154,7 +153,7 @@ class InvalidExperimentName(LabRegistryError):
 
         raise InvalidExperimentName("typo")
         # InvalidExperimentName: 'typo' is not a recognized experiment name.
-        # Valid names: standard, verbose, minimalist, file, rotating_file, AI
+        # Valid names: AI, ASYNC, FILE, VERBOSE, STANDARD, MINIMALIST, RELAY, ROTATING
     """
 
     def __init__(self, name: str) -> None:
@@ -163,7 +162,7 @@ class InvalidExperimentName(LabRegistryError):
 
         valid = ", ".join(e.value for e in ExperimentType)
         super().__init__(
-            f"'{name}' is not a recognised experiment name. "
+            f"'{name}' is not a recognized experiment name. "
             f"Valid names: {valid}"
         )
 
@@ -179,7 +178,7 @@ class InvalidProfileName(LabRegistryError):
 
         raise InvalidProfileName("ghost")
         # InvalidProfileName: 'ghost' is not a recognized profile name.
-        # Valid names: observer, investigator, conspiracy_theorist, ai_agent
+        # Valid names: AI_AGENT, GUI, OBSERVER, INVESTIGATOR, CONSPIRACY_THEORIST
     """
 
     def __init__(self, name: str) -> None:
@@ -187,7 +186,7 @@ class InvalidProfileName(LabRegistryError):
 
         valid = ", ".join(p.value for p in ProfileType)
         super().__init__(
-            f"'{name}' is not a recognised profile name. "
+            f"'{name}' is not a recognized profile name. "
             f"Valid names: {valid}"
         )
 
@@ -199,8 +198,8 @@ class InvalidTheoryName(LabRegistryError):
         name: The unrecognized string that was provided.
     Example::
         raise InvalidTheoryName("ghost")
-        # InvalidTheoryName: 'ghost' is not a recognised theory name.
-        # Valid names: ASYNC, DB, HTTP, PERFORMANCE, SEC, TIMED_FILE, TRACE
+        # InvalidTheoryName: 'ghost' is not a recognized theory name.
+        # Valid names: DB, HTTP, PERFORMANCE, SEC, TIMED_FILE, TRACE
     """
 
     def __init__(self, name: object) -> None:
@@ -208,7 +207,7 @@ class InvalidTheoryName(LabRegistryError):
 
         valid = ", ".join(t.value for t in TheoryType)
         super().__init__(
-            f"'{name}' is not a recognised theory name. "
+            f"'{name}' is not a recognized theory name. "
             f"Valid names: {valid}"
         )
 
@@ -227,29 +226,26 @@ class LabConfigurationError(LabError):
 
 
 class InvalidLevelError(LabConfigurationError):
-    """Raised when a level value is neither a recognized string name nor
-    a valid :mod:`logging` integer constant.
+    """Raised when a level is neither a known level name nor an integer ``0`` or above.
 
-    :func:`~logger_lab.logging_kernel.handlers.normalize_level_name`
-    keeps its ``INFO`` fallback for unknown strings; raise this class
-    explicitly when strict level validation is required.
+    Raised by `normalize_level_name`, so by `with_level()` and `with_subscriber(level=...)`.
+    The message lists the standard names; custom names added with `logging.addLevelName`
+    are accepted too.
 
     Args:
         level: The invalid level value that was provided.
-
     Example::
-
         raise InvalidLevelError("LOUD")
         # InvalidLevelError: 'LOUD' is not a valid logging level.
-        # Valid names: DEBUG, INFO, WARNING, ERROR, CRITICAL
+        # Valid names: DEBUG, INFO, WARNING, ERROR, CRITICAL (or an integer 0 or above)
     """
 
-    _VALID = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+    VALID = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
     def __init__(self, level: object) -> None:
         super().__init__(
             f"'{level}' is not a valid logging level. "
-            f"Valid names: {', '.join(self._VALID)}"
+            f"Valid names: {', '.join(self.VALID)} (or an integer 0 or above)"
         )
 
 
@@ -372,7 +368,7 @@ class LogFileClashError(LabConfigurationError):
 
 class ExperimentRegistrationError(LabConfigurationError):
     """Raised when a callable registered in ``EXPERIMENTS`` does not
-    satisfy the :class:`~logger_lab.core.registry.ExperimentFactory`
+    satisfy the :class:`~logger_lab.core.registry.LabExperiment`
     protocol.
 
     Validation fires at registration time (when the ``EXPERIMENTS`` dict
@@ -386,7 +382,7 @@ class ExperimentRegistrationError(LabConfigurationError):
     Example::
 
         raise ExperimentRegistrationError(ExperimentType.AI, "not callable")
-        # ExperimentRegistrationError: cannot register experiment 'ai': not callable
+        # ExperimentRegistrationError: cannot register experiment 'AI': not callable
     """
 
     def __init__(self, name: object, reason: str) -> None:
@@ -396,7 +392,7 @@ class ExperimentRegistrationError(LabConfigurationError):
 
 class ProfileRegistrationError(LabConfigurationError):
     """Raised when a callable registered in ``PROFILES`` does not satisfy
-    the :class:`~logger_lab.core.registry.ProfileFactory` protocol.
+    the :class:`~logger_lab.core.registry.LabProfile` protocol.
 
     Args:
         name:   The :class:`~logger_lab.core.enums.ProfileType` key
@@ -406,7 +402,7 @@ class ProfileRegistrationError(LabConfigurationError):
     Example::
 
         raise ProfileRegistrationError(ProfileType.OBSERVER, "not callable")
-        # ProfileRegistrationError: cannot register profile 'observer': not callable
+        # ProfileRegistrationError: cannot register profile 'OBSERVER': not callable
     """
 
     def __init__(self, name: object, reason: str) -> None:
@@ -422,24 +418,29 @@ class BuilderError(LabError):
     """Raised when :meth:`~logger_lab.core.builder.LabBuilder.build` is
     called in an invalid state.
 
-    Currently, this means ``build()`` was called with neither a profile
+    Usually this means ``build()`` was called with neither a profile
     nor any experiments queued, which would produce a logger with zero
     handlers — almost certainly a misconfiguration rather than intentional.
+    It is also raised, with its own *reason*, when ``async`` is queued
+    with no output for it to dispatch to.
 
     Args:
-        name: The logger name passed to ``build()``.
+        name:   The logger name passed to ``build()``.
+        reason: A specific message, replacing the default one.
 
     Example::
 
         raise BuilderError("my_app")
         # BuilderError: build('my_app') called with no experiments or profile
-        # queued. Add at least one via .with_experiment() or .with_profile().
+        # queued. Add at least one via .with_experiment(), .with_profile() or .with_theory().
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, reason: str | None = None) -> None:
         super().__init__(
-            f"build('{name}') called with no experiments or profile queued. "
-            f"Add at least one via .with_experiment(), .with_profile() or .with_theory()."
+            reason or (
+                f"build('{name}') called with no experiments or profile queued. "
+                f"Add at least one via .with_experiment(), .with_profile() or .with_theory()."
+            )
         )
 
 

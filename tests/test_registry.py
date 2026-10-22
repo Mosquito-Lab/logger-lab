@@ -4,14 +4,16 @@ import logging
 
 import pytest
 
-from logger_lab import ProfileType, TheoryNotFoundError, TheoryType
+from logger_lab import ExperimentType, ProfileType, TheoryNotFoundError, TheoryType, lab
 from logger_lab.core import registry
 from logger_lab.core.registry import (
-    PROFILE_EXPERIMENTS, get_profile, get_theory, register_profile, register_theory,
+    PROFILE_EXPERIMENTS, get_profile, get_theory, register_experiment, register_profile, register_theory,
 )
 from logger_lab.core.enums import Channel
-from logger_lab.experiments import file_experiment, minimalist_experiment, rotating_file_experiment, standard_experiment
-from logger_lab.logging_kernel import ExperimentRegistrationError, ProfileRegistrationError, release_handler
+from logger_lab.experiments import (
+    async_experiment, file_experiment, minimalist_experiment, rotating_file_experiment, standard_experiment,
+)
+from logger_lab.logging_kernel import ExperimentRegistrationError, ProfileRegistrationError
 from logger_lab.profiles import observer
 
 
@@ -37,27 +39,38 @@ def test_profile_with_unregistered_experiment_is_rejected():
         register_profile(ProfileType.OBSERVER, observer, (stray_experiment,))
 
 
+def handler_shape(logger: logging.Logger) -> list:
+    """Handler types on *logger*, with a dispatcher's targets nested inside it."""
+
+    return [(type(h), [type(t) for t in getattr(h, "targets", ())]) for h in logger.handlers]
+
+
 @pytest.mark.parametrize("profile", list(ProfileType))
 def test_profile_function_matches_its_declared_experiments(profile):
-    """Calling a profile directly builds the same experiments the registry declares."""
+    """Calling a profile directly builds exactly what the builder builds from its declared experiments."""
 
-    declared = PROFILE_EXPERIMENTS[profile]
-    built = get_profile(profile)(f"direct.{profile.value}", logging.DEBUG).handlers
+    direct = get_profile(profile)(f"direct.{profile.value}", logging.DEBUG)
+    built = lab().with_profile(profile).with_level("DEBUG").build(f"built.{profile.value}")
 
-    direct = [h for exp in declared for h in registry.EXPERIMENTS[exp](logging.DEBUG)]
-    expected = [type(h) for h in direct]
+    assert handler_shape(direct) == handler_shape(built)
+    assert lab().with_profile(profile).plan() == list(PROFILE_EXPERIMENTS[profile])
 
-    for handler in direct:  # unattached, so release them by hand (shared files stay open for the logger)
-        release_handler(handler)
 
-    assert [type(h) for h in built] == expected
+def test_dispatch_channel_and_dispatcher_mark_must_agree():
+    """An ordinary factory can't take the DISPATCH channel, and a dispatcher can't take another one."""
+
+    with pytest.raises(ExperimentRegistrationError, match="DISPATCH"):
+        register_experiment(ExperimentType.STANDARD, standard_experiment, Channel.DISPATCH)
+
+    with pytest.raises(ExperimentRegistrationError, match="DISPATCH"):
+        register_experiment(ExperimentType.ASYNC, async_experiment, Channel.CONSOLE)
 
 
 def test_placeholder_theory_raises_typed_error():
     """An unregistered theory is a placeholder, reported as `TheoryNotFoundError`."""
 
-    with pytest.raises(TheoryNotFoundError, match="'ASYNC' is still a placeholder"):
-        get_theory(TheoryType.ASYNC)
+    with pytest.raises(TheoryNotFoundError, match="'TRACE' is still a placeholder"):
+        get_theory(TheoryType.TRACE)
 
 
 def test_register_theory_validates_and_records_channel(monkeypatch):

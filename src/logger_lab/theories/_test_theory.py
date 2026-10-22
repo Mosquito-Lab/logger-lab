@@ -7,7 +7,7 @@ Run it from the repository root, naming the theory by its `TheoryType` value::
 
 A placeholder theory (not registered yet) stops with `TheoryNotFoundError`,
 which is the expected result until it reaches the trial stage.  Nothing runs
-on import.
+on import.  The leading underscore marks it as the harness, not a theory.
 """
 
 import sys

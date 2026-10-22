@@ -4,8 +4,9 @@ import pytest
 
 from logger_lab import (
     ExperimentType, InvalidExperimentName, InvalidProfileName, InvalidTheoryName, ProfileType,
-    TheoryNotFoundError, TheoryType, get_logger, lab,
+    TheoryNotFoundError, TheoryType, lab,
 )
+from logger_lab.core.registry import THEORIES
 from logger_lab.logging_kernel import normalize_exp_name, normalize_profile_name, normalize_theory_name
 
 # Members whose *name* differs from their *value* — the name as a string is not an alias.
@@ -19,38 +20,43 @@ RENAMED = [
 @pytest.mark.parametrize("member", list(ExperimentType))
 @pytest.mark.parametrize("form", ["member", "value", "lower"])
 def test_every_experiment_resolves_by_member_and_value(member, form):
-    """`with_experiment()` and `get_logger()` accept the member, its value and its lowercase value."""
+    """`with_experiment()` accepts the member, its value and its lowercase value — and builds with it."""
 
     name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
 
     assert normalize_exp_name(name) is member
     assert lab().with_experiment(name).plan() == [member]
-    assert get_logger(f"names.exp.{member.value}.{form}", experiment=name).handlers
+
+    if member not in (ExperimentType.ASYNC, ExperimentType.RELAY):  # those need an output / a subscriber
+        assert lab().with_experiment(name).build(f"names.exp.{member.value}.{form}").handlers
 
 
 @pytest.mark.parametrize("member", list(ProfileType))
 @pytest.mark.parametrize("form", ["member", "value", "lower"])
 def test_every_profile_resolves_by_member_and_value(member, form):
-    """`with_profile()` and `get_logger()` accept the member, its value and its lowercase value."""
+    """`with_profile()` accepts the member, its value and its lowercase value — and builds with it."""
 
     name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
 
     assert normalize_profile_name(name) is member
     assert lab().with_profile(name).plan()
-    assert get_logger(f"names.prof.{member.value}.{form}", profile=name).handlers
+    assert lab().with_profile(name).build(f"names.prof.{member.value}.{form}").handlers
 
 
 @pytest.mark.parametrize("member", list(TheoryType))
 @pytest.mark.parametrize("form", ["member", "value", "lower"])
 def test_every_theory_resolves_by_member_and_value(member, form):
-    """Theory names resolve both ways; unregistered theories then fail as placeholders, not as bad names."""
+    """Theory names resolve both ways; a registered theory builds, a placeholder fails as one — never as a bad name."""
 
     name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
 
     assert normalize_theory_name(name) is member
 
-    with pytest.raises(TheoryNotFoundError, match="placeholder"):
-        get_logger(f"names.theory.{member.value}.{form}", theory=name)
+    if member in THEORIES:
+        assert lab().with_theory(name).build(f"names.theory.{member.value}.{form}").handlers
+    else:
+        with pytest.raises(TheoryNotFoundError, match="placeholder"):
+            lab().with_theory(name).build(f"names.theory.{member.value}.{form}")
 
 
 @pytest.mark.parametrize(("member", "name"), RENAMED)

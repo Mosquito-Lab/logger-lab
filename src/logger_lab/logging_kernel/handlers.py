@@ -14,18 +14,15 @@ import warnings
 import weakref
 from collections import Counter
 from dataclasses import dataclass, field
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 from typing import Callable, Iterable, TypeVar
 
 from logger_lab.logging_kernel.constants import DEFAULT_LOG_DIR
 from logger_lab.logging_kernel.errors import LogDirectoryError, LogFileClashError, SharedFileSettingsWarning
 
-#: Owner recorded for a file handler requested outside a named logger (a direct factory call).
-UNNAMED = "<unnamed>"
-
-#: Any handler type — `configure_handler` hands back the same type it was given.
-HandlerT = TypeVar("HandlerT", bound=logging.Handler)
+UNNAMED = "<unnamed>"  # Owner recorded for a file handler requested outside a named logger
+HandlerT = TypeVar("HandlerT", bound=logging.Handler)  # Any handler type: configure_handler returns what it was given
 
 
 #############################
@@ -69,6 +66,10 @@ class SharedRotatingFileHandler(StayClosedMixin, RotatingFileHandler):
     """`RotatingFileHandler` for the ``rotating_file`` experiment — shared, never reopened once closed."""
 
 
+class SharedTimedRotatingFileHandler(StayClosedMixin, TimedRotatingFileHandler):
+    """`TimedRotatingFileHandler` for the ``TIMED_FILE`` theory — shared, never reopened once closed."""
+
+
 #####################
 # Shared file table #
 #####################
@@ -83,15 +84,9 @@ class SharedFile:
     owners: Counter[str] = field(default_factory=Counter)
 
 
-#: Every open log file in the process, keyed by `file_key()`.
-SHARED_FILES: dict[str, SharedFile] = {}
-
-#: Handlers logger-lab created (via `configure_handler`) — the only ones it ever closes.
-#: Anything else on a logger (pytest's capture handler, a user's own handler) is detached, never closed.
-LAB_HANDLERS: "weakref.WeakSet[logging.Handler]" = weakref.WeakSet()
-
-#: Guards ``SHARED_FILES`` and every logger's handler swap — each check-then-change happens under it.
-SHARED_FILES_LOCK = threading.RLock()
+SHARED_FILES: dict[str, SharedFile] = {}  # Every open log file in the process, keyed by file_key()
+LAB_HANDLERS: "weakref.WeakSet[logging.Handler]" = weakref.WeakSet()  # Handlers logger-lab made: the only ones it closes
+SHARED_FILES_LOCK = threading.RLock()  # Guards SHARED_FILES and every handler swap (each check-then-change)
 
 
 def file_key(path: Path | str) -> str:
@@ -210,19 +205,27 @@ def release_handler(handler: logging.Handler, logger_name: str | None = None) ->
         handler.close()
 
 
-def install_handlers(logger: logging.Logger, factories: Iterable[Callable[[], list[logging.Handler]]]) -> None:
+def install_handlers(
+    logger: logging.Logger,
+    factories: Iterable[Callable[[], list[logging.Handler]]],
+    dispatcher: Callable[..., list[logging.Handler]] | None = None,
+) -> None:
     """
     Build every handler from *factories*, then put them on *logger* in one atomic swap.
 
     1. Each factory runs; if one raises, the handlers built so far are released and
        *logger* is left exactly as it was.
-    2. ``logger.handlers`` is replaced in a single assignment.  A thread logging at that
+    2. If a *dispatcher* is given (e.g. ``async``), it is called with
+       ``handlers=`` the built outputs and returns what goes on the logger instead —
+       it owns the outputs from then on.
+    3. ``logger.handlers`` is replaced in a single assignment.  A thread logging at that
        moment finishes its record on the old list — it never sees a half-built one.
-    3. The old handlers are released (`release_handler`).
+    4. The old handlers are released (`release_handler`).
 
     Args:
-        logger:    The logger to (re)configure.
-        factories: Zero-argument callables, each returning handlers.
+        logger:     The logger to (re)configure.
+        factories:  Zero-argument callables, each returning output handlers.
+        dispatcher: Optional callable taking ``handlers=`` and returning the logger's handlers.
     Example::
         install_handlers(logger, [partial(standard_experiment, logging.INFO)])
     """
@@ -233,13 +236,16 @@ def install_handlers(logger: logging.Logger, factories: Iterable[Callable[[], li
         for factory in factories:
             new_handlers += factory()
 
+        if dispatcher is not None:
+            new_handlers = dispatcher(handlers=new_handlers)
+
     except BaseException:
         for handler in new_handlers:
             release_handler(handler, logger.name)
 
         raise
 
-    with SHARED_FILES_LOCK:  # concurrent installs on one logger must not both release the same old list
+    with SHARED_FILES_LOCK:  # concurrent installations on one logger must not both release the same old list
         old_handlers = logger.handlers
         logger.handlers = new_handlers
 
@@ -290,7 +296,7 @@ def configure_handler(
         The same *handler* instance, mutated in place, for convenient
         one-liner use inside experiment functions::
 
-            return [_configure_handler(RichHandler(), level)]
+            return [configure_handler(RichHandler(), level)]
     """
 
     handler.setLevel(level)

@@ -116,6 +116,11 @@ def function(arg: Type) -> ReturnType:
 - Anything public from a package is listed in its `__all__`. Anything imported
   into an `__init__` is either exported there or not imported at all.
 - Use section banners (`# Lookup helpers #` boxes) to split longer modules.
+- **Comments use plain `#`**, never `#:` doc-comments. A constant's comment
+  goes on the same line as the constant:
+  `DEFAULT_FILENAME = "app.log"  # Log file name inside the log directory`.
+  There is no `Final` on module constants; the module docstring says what they
+  are for.
 
 ### 1.5 logger-lab additions to the baseline
 
@@ -132,15 +137,17 @@ def function(arg: Type) -> ReturnType:
    every handler is a stdlib `logging.Handler` (or a subclass of one). There is
    no custom logger class and no custom sink model. Code that works with
    `logging` keeps working with logger-lab.
-2. **Composition is the point.** An experiment is one atomic behaviour (one
+2. **Composition is the point, and `lab()` is the one composer.** There is no
+   one-call shortcut beside it. An experiment is one atomic behaviour (one
    handler, one format, one destination). A profile only combines experiments.
    The builder composes profiles, experiments and theories into one logger.
    Experiments are designed to be built together.
 3. **Experiments never clash.** What gets built together must work together.
    Every experiment and theory owns one **channel** (`CONSOLE`, `FILE`,
-   `JSON`), and a logger holds **at most one experiment per channel**. So
-   `standard` and `minimalist` never both print, and two handlers never write
-   to one file.
+   `JSON`, `LIVE`, `DISPATCH`), and a logger holds **at most one experiment per
+   channel**. So `standard` and `minimalist` never both print, two handlers
+   never write to one file, and a logger never has two dispatchers.
+   `DISPATCH` isn't an output: its one experiment (`async`) wraps the others.
    - Two *different* experiments on one channel → `ExperimentClashError`.
      The message names both, where each came from, and the rule.
    - The *same* experiment twice → `DuplicateExperimentWarning`. The first
@@ -189,9 +196,13 @@ def function(arg: Type) -> ReturnType:
    | Registering factories, their channels and profile compositions | `core.registry` (`register_*`) |
    | The one-experiment-per-channel rule | `core.registry.find_channel_clash()` |
    | A profile's composition | its module's `*_EXPERIMENTS` tuple, read by both the profile function and the registry |
-   | Assembling a profile's logger for a direct call | `profiles._base._build_profile()` |
+   | Assembling a profile's logger for a direct call | `profiles.base.build_profile()` |
+   | The default level when none is set | `core.builder.default_level()` |
    | Ordering, de-duplicating and clash-checking a composition | `core.builder.LabBuilder.plan()` |
    | Building the final logger | `core.builder.LabBuilder.build()` |
+   | The async queue, its one worker thread, and `drain()` | `logging_kernel.dispatch` |
+   | Which factories are dispatchers | `logging_kernel.dispatch.dispatcher` (checked against `DISPATCH` at registration) |
+   | Handing records to subscribers | `experiments.relay.RelayHandler` |
    | Default values (paths, sizes, encoding) | `logging_kernel.constants` |
    | The JSON record schema | `logging_kernel.formatters.JSONFormatter` |
 
@@ -212,8 +223,8 @@ def function(arg: Type) -> ReturnType:
 8. **Names: enum member or value string, everywhere.** Each experiment,
    profile and theory can be selected by its enum member
    (`ExperimentType.ROTATING_FILE`) or by its value string (`"ROTATING"`),
-   case-insensitively. That holds in every entry point: `get_logger()`,
-   `with_experiment()`, `with_profile()` and the theory path. A member's
+   case-insensitively. That holds in every builder method:
+   `with_experiment()`, `with_profile()` and `with_theory()`. A member's
    *name* may differ from its *value* (`ROTATING_FILE` / `"ROTATING"`,
    `AGENT` / `"AI_AGENT"`, `CONSPIRATOR` / `"CONSPIRACY_THEORIST"`). Docs and
    examples always show the **value** string.
@@ -228,8 +239,11 @@ def function(arg: Type) -> ReturnType:
 11. **Setup code favours clarity; the emit path favours speed.** Building a
    logger happens once, so clarity wins there. Formatting and emitting happen
    on every record, so avoid repeated work there (see `JSONFormatter`'s
-   one-time `_STANDARD_ATTRS`).
+   one-time `STANDARD_ATTRS`).
 12. **Docs match behaviour**, and that includes the README.
+13. **One default level.** No level set → `INFO`, or `WARNING` when `minimalist`
+   is part of the logger (`core.builder.default_level`). Invalid levels raise
+   `InvalidLevelError`; nothing falls back silently.
 
 ---
 
@@ -239,9 +253,10 @@ def function(arg: Type) -> ReturnType:
 
 | Kind | Signature | Must | Must not |
 |---|---|---|---|
-| **Experiment** | `name_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]` | Accept and ignore unknown kwargs (including `logger_name`, which the builder always passes). Build handlers through `configure_handler()` and directories through `get_log_dir()`. **A file experiment gets its handler from `share_file_handler()`** (a `StayClosedMixin` handler, `NOTSET` level), passing its `kind` and the settings that must agree. State in its docstring which file args it uses. Be registered with its `Channel`. Be thread-safe (§2.4). | Touch a logger, create directories itself, open a file itself, or print. Produce handlers for more than one channel. |
+| **Experiment** | `name_experiment(level: int = INFO, **kwargs: object) -> list[Handler]` | Accept and ignore unknown kwargs (including `logger_name`, which the builder always passes). Build handlers through `configure_handler()` and directories through `get_log_dir()`. **A file experiment gets its handler from `share_file_handler()`** (a `StayClosedMixin` handler, `NOTSET` level), passing its `kind` and the settings that must agree. State in its docstring which file args it uses. Be registered with its `Channel`. Be thread-safe (§2.4). | Touch a logger, create directories itself, open a file itself, or print. Produce handlers for more than one channel. |
 | **Theory** | Same as an experiment | Live in `theories/`. Have a `TheoryType` value. Follow the lifecycle in §3.4. Be registered with `register_theory(..., channel)` once it works. | Be registered before it works (see §3.4). |
-| **Profile** | `name(name: str, level: int = DEBUG, **kwargs: object) -> Logger` | Declare its experiments once as `NAME_EXPERIMENTS = (factory, ...)`, be `_build_profile(name, level, *NAME_EXPERIMENTS, **kwargs)`, and be registered with that same tuple. | Combine experiments that clash (§2.3). Its registration fails if it does. |
+| **Profile** | `name(name: str, level: int = INFO, **kwargs: object) -> Logger` | Declare its experiments once as `NAME_EXPERIMENTS = (factory, ...)`, be `build_profile(name, level, *NAME_EXPERIMENTS, **kwargs)`, and be registered with that same tuple. | Combine experiments that clash (§2.3). Its registration fails if it does. |
+| **Dispatcher** | `@dispatcher name_experiment(level, *, handlers, logger_name=None, **kwargs) -> list[Handler]` | Wrap *handlers* (the logger's built outputs) and return the handlers that replace them; release them when released. Be registered on `Channel.DISPATCH`. Raise `BuilderError` if there's nothing to wrap. | Write records on the calling thread's behalf without the order and exit guarantees of `logging_kernel.dispatch`. |
 | **Builder method** | `with_x(self, ...) -> "LabBuilder"` | Normalize and record its input, then return `self`. | Do any I/O. |
 
 ### 3.2 Errors
@@ -279,8 +294,7 @@ Reference row · has a README row · shows it can't clash (§2.3, §2.5) · has 
 passing pass row in the cleanliness tracker.
 
 The lifecycle is implemented (Step 5, 2026-10-22). Theories are selected with
-`with_theory(theory, **options)` or `get_logger(theory=...)`, by member or
-value string. *options* reach only that theory's factory.
+`with_theory(theory, **options)`, by member or value string. *options* reach only that theory's factory.
 
 ---
 
@@ -314,10 +328,14 @@ uv run pyrefly check
 - **A concurrency test must be able to fail.** Check it once against the bug
   it guards (for example, with sharing patched out, the rotation test loses
   records and hits `WinError 32`).
-- **Recorded baseline (2026-10-22, Windows, Python 3.10):** `pytest` **112
-  passed** (the thread tests passed 5 runs in a row). `pyrefly` **0 errors,
-  0 warnings, 3 suppressed**: two deliberate wrong-type calls in tests, and one
-  `inspect.currentframe()` that pyrefly treats as possibly `None`.
+- **Recorded baseline (2026-10-22, Windows, Python 3.10):** `pytest` **181
+  passed** (the concurrency tests passed 5 runs in a row). `pyrefly`
+  **0 errors, 0 warnings, 3 suppressed**: two deliberate wrong-type calls in
+  tests, and one `inspect.currentframe()` that pyrefly treats as possibly
+  `None`.
+- **Integration check for the `gui` profile:** run against LabFrame's own
+  environment (real PySide6), a record logged on a worker thread reaches a Qt
+  slot on the GUI thread (`Continuation.md`, 0.2.0 changes).
 
 ---
 
@@ -325,26 +343,30 @@ uv run pyrefly check
 
 | Workstream | Status | Current note |
 |---|---|---|
-| Experiments (6) | Done | Each registered with its channel. Cleanliness review pending (pass 3) |
-| Profiles (4) | Done | Declared `*_EXPERIMENTS` tuples. `conspiracy_theorist` is `verbose` + `rotating_file` |
-| Builder / `get_logger` | Done | `with_file_args()`, `with_theory()`, `plan()` |
+| Experiments (8) | Done | Each registered with its channel; `relay` and `async` added after `3adfa9c`. Cleanliness review pending (pass 3) |
+| Profiles (5) | Done | Declared `*_EXPERIMENTS` tuples. `gui` added after `3adfa9c` for LabFrame |
+| Builder (`lab()`, the only composer) | Done | `with_file_args()`, `with_theory()`, `with_subscriber()`, `plan()`; `get_logger()` removed (D-19) |
+| Async dispatch | Done (0.2.0) | One worker thread per process, tracebacks kept, `drain()`, drained at exit |
 | Composition rules (one per channel, duplicates warn) | Done 2026-10-22 | Per logger (§2.3) |
 | One file, one handler, across loggers (`CR-9`) | Done 2026-10-22 | `share_file_handler()`; per-module levels and experiments (§2.5) |
 | Thread safety (D-9) | Done 2026-10-22 | Atomic handler swaps (`CR-10`), stay-closed file handlers, concurrency tests (`TS-4`) |
 | Handler closing | Done 2026-10-22 | Released when last, closed only if logger-lab created it |
 | Name resolution (enum + value) | Done | Experiments, profiles and theories; pinned by tests |
-| Theory system | Done 2026-10-22 | Lifecycle §3.4; every theory still a placeholder |
-| Theories `TIMED_FILE` … `DB` | Placeholder | Ranked in `Continuation.md` §3 |
-| Test and type-check baseline | Done 2026-10-22 | 112 passed · pyrefly clean |
+| Theory system | Done 2026-10-22 | Lifecycle §3.4 |
+| `TIMED_FILE` theory | **Trial** | Registered and tested; promotion pending (`Continuation.md` §3) |
+| Theories `TRACE` … `DB` | Placeholder | Ranked in `Continuation.md` §3 |
+| Test and type-check baseline | Done | 181 passed · pyrefly clean |
+| LabFrame adoption of the `gui` profile | Not started | A LabFrame-side change, once 0.2.0 is published |
 | Standards (this doc) | Done 2026-10-22 | Baseline §1 to be mirrored into LabFrame and Project A |
-| Cleanliness passes | Not started | Pass 1 is `logging_kernel` |
+| Cleanliness passes | Paused | Every flagged finding was fixed on 2026-10-22; the passes still score and re-check each file |
 | README | Done 2026-10-22 | |
 
 ---
 
 ## 6. Immediate priority
 
-Phase 1 (Steps 0–5), `KN-10`, the test guard (`TS-3`) and shared, thread-safe
-file handling (`CR-9`, `CR-10`, `TS-4`) are built and verified. Next: the
-owner reviews the preview and commits, then cleanliness pass 1
-(`logging_kernel`) starts.
+Async, relay, the `gui` profile and the `TIMED_FILE` trial (all still 0.2.0)
+are built and verified, including against LabFrame's real PySide6. Next: the owner
+reviews the preview and commits. Then come LabFrame's adoption of the `gui`
+profile, `TIMED_FILE` promotion, and the cleanliness passes (paused by the
+owner, 2026-10-22).

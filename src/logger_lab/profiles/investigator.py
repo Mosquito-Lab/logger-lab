@@ -6,17 +6,16 @@ handler (``file``) so every log record appears in both the terminal —
 with color and traceback support — and a timestamped log file on disk.
 """
 
-from logging import DEBUG, Logger
+from logging import INFO, Logger
 
 from logger_lab.experiments.file import file_experiment
 from logger_lab.experiments.standard import standard_experiment
-from logger_lab.profiles._base import _build_profile
+from logger_lab.profiles.base import build_profile
 
-#: Experiments this profile is built from, in order — one console, one file.
-INVESTIGATOR_EXPERIMENTS = (standard_experiment, file_experiment)
+INVESTIGATOR_EXPERIMENTS = (standard_experiment, file_experiment)  # Built from, in order: one console, one file
 
 
-def investigator(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
+def investigator(name: str, level: int = INFO, **kwargs: object) -> Logger:
     """
     Return a logger with Rich console + persistent file output.
     Experiments applied (in order):
@@ -26,7 +25,7 @@ def investigator(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
 
     Args:
         name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.DEBUG`.
+        level: Logging level.  Defaults to `logging.INFO`.
         **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
     Returns:
         A configured `logging.Logger` with ``propagate = False``.
@@ -36,4 +35,4 @@ def investigator(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
         logger.error("Unexpected response", exc_info=True)
     """
 
-    return _build_profile(name, level, *INVESTIGATOR_EXPERIMENTS, **kwargs)
+    return build_profile(name, level, *INVESTIGATOR_EXPERIMENTS, **kwargs)

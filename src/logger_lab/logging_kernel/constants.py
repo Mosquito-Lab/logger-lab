@@ -1,16 +1,14 @@
+"""
+Default file args, shared by `LabBuilder.with_file_args()` and the file experiments.
+
+The defaults are fixed when those functions are defined, so reassigning one at
+runtime changes nothing. To use other values, pass them through `with_file_args()`.
+"""
+
 from pathlib import Path
 
-# Default file encoding. This one shouldn't be changed anyhow.
-DEFAULT_ENCODING     = 'utf-8'
-
-# Default log file name written inside the log directory.
-DEFAULT_FILENAME     = 'app.log'
-
-# Default log directory — relative to the current working directory.
-DEFAULT_LOG_DIR      = Path('logs')
-
-# Default maximum file size before rotation: 5 MiB.
-DEFAULT_MAX_BYTES    = 5 * 1024 * 1024
-
-# Default number of rotated backup files to retain.
-DEFAULT_BACKUP_COUNT = 3
+DEFAULT_ENCODING     = "utf-8"          # Log file encoding; override with with_file_args(encoding=...)
+DEFAULT_FILENAME     = "app.log"        # Log file name inside the log directory
+DEFAULT_LOG_DIR      = Path("logs")     # Log directory, relative to the current working directory
+DEFAULT_MAX_BYTES    = 5 * 1024 * 1024  # Size at which a rotating file rolls over: 5 MiB
+DEFAULT_BACKUP_COUNT = 3                # Number of rotated backup files to keep

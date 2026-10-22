@@ -1,41 +1,54 @@
+"""
+The names logger-lab knows: experiments, profiles, theories, and the channels experiments write to.
+
+Select a member by the member itself (``ExperimentType.ROTATING_FILE``) or by its **value**
+string, case-insensitively (``"ROTATING"``).  A member's *name* may differ from its value
+(``ROTATING_FILE``/``"ROTATING"``, ``AGENT``/``"AI_AGENT"``, ``CONSPIRATOR``/``"CONSPIRACY_THEORIST"``);
+the name as a string is not an alias.
+"""
+
 from enum import Enum
 
 
 class ExperimentType(Enum):
-     """ enums for experiment types """
+    """Registered experiments — one logging behavior each."""
 
-     AI            = "AI"
-     FILE          = "FILE"
-     VERBOSE       = "VERBOSE"
-     STANDARD      = "STANDARD"
-     MINIMALIST    = "MINIMALIST"
-     ROTATING_FILE = "ROTATING"
+    AI            = "AI"
+    ASYNC         = "ASYNC"
+    FILE          = "FILE"
+    VERBOSE       = "VERBOSE"
+    STANDARD      = "STANDARD"
+    MINIMALIST    = "MINIMALIST"
+    RELAY         = "RELAY"
+    ROTATING_FILE = "ROTATING"
 
 
 class ProfileType(Enum):
-     """ enums for profile types """
+    """Registered profiles — named combinations of experiments."""
 
-     AGENT        = "AI_AGENT"
-     OBSERVER     = "OBSERVER"
-     INVESTIGATOR = "INVESTIGATOR"
-     CONSPIRATOR  = "CONSPIRACY_THEORIST"
+    AGENT        = "AI_AGENT"
+    GUI          = "GUI"
+    OBSERVER     = "OBSERVER"
+    INVESTIGATOR = "INVESTIGATOR"
+    CONSPIRATOR  = "CONSPIRACY_THEORIST"
 
 
 class Channel(Enum):
-     """ the output an experiment owns — a logger holds at most one experiment per channel """
+    """The output an experiment owns — a logger holds at most one experiment per channel."""
 
-     CONSOLE = "CONSOLE"
-     FILE    = "FILE"
-     JSON    = "JSON"
+    CONSOLE  = "CONSOLE"
+    FILE     = "FILE"
+    JSON     = "JSON"
+    LIVE     = "LIVE"      # Records handed to subscriber callbacks (relay)
+    DISPATCH = "DISPATCH"  # Not an output: how records reach the others (async)
 
 
 class TheoryType(Enum):
-     """ enums for undiscovered theory types """
+    """Theories — experiments still being researched (placeholders until registered)."""
 
-     ASYNC       = "ASYNC"
-     DB          = "DB"
-     HTTP        = "HTTP"
-     PERFORMANCE = "PERFORMANCE"
-     SEC         = "SEC"
-     TIMED_FILE  = "TIMED_FILE"
-     TRACE       = "TRACE"
+    DB          = "DB"
+    HTTP        = "HTTP"
+    PERFORMANCE = "PERFORMANCE"
+    SEC         = "SEC"
+    TIMED_FILE  = "TIMED_FILE"
+    TRACE       = "TRACE"

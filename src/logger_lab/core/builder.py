@@ -10,10 +10,12 @@ clashes — and `build()` builds exactly that list.
 import warnings
 from functools import partial
 from pathlib import Path
-from logging import INFO, Logger, getLogger
+from logging import INFO, WARNING, Logger, getLogger
 
 from logger_lab.logging_kernel.constants import DEFAULT_ENCODING, DEFAULT_FILENAME, DEFAULT_MAX_BYTES, \
     DEFAULT_BACKUP_COUNT, DEFAULT_LOG_DIR
+from logger_lab.experiments.relay import Subscriber
+from logger_lab.logging_kernel.dispatch import is_dispatcher
 from logger_lab.logging_kernel.errors import BuilderError, DuplicateExperimentWarning, ExperimentClashError
 from logger_lab.logging_kernel.handlers import install_handlers
 from logger_lab.core.enums import ExperimentType, ProfileType, TheoryType
@@ -35,20 +37,23 @@ class LabBuilder:
     calling `build`; an empty builder raises `BuilderError`.
 
     Composition rules, enforced by `plan()`:
-    * At most one experiment per channel — one console, one file, one JSON.
-      Two different experiments on one channel raise `ExperimentClashError`.
+    * At most one experiment per channel — one console, one file, one JSON,
+      one live relay, one dispatcher.  Two different experiments on one
+      channel raise `ExperimentClashError`.
     * The same experiment queued twice warns (`DuplicateExperimentWarning`)
       and only the first instance is built.
+    * Subscribers (`with_subscriber`) bring the ``relay`` experiment with them.
     """
 
     def __init__(self) -> None:
-        """Start empty: no profile, nothing queued, ``INFO`` level, default file args."""
+        """Start empty: no profile, nothing queued, no level (see `default_level`), default file args."""
 
         self._experiments: list[ExperimentType | TheoryType] = []
         self._theory_options: dict[TheoryType, dict[str, object]] = {}
         self._profile: ProfileType | None = None
-        self._level: int = INFO
+        self._level: int | None = None  # None until with_level(); build() then uses default_level()
         self._file_args: dict[str, object] = {}
+        self._subscribers: list[tuple[Subscriber, int | None]] = []
 
     def with_experiment(self, experiment: ExperimentType | str) -> "LabBuilder":
         """
@@ -132,15 +137,16 @@ class LabBuilder:
         """
         Set the logging level applied to the logger and all handlers.
 
-        Accepts both string names (``"DEBUG"``, case-insensitive) and
-        integer constants (``logging.DEBUG``). Unknown strings fall
-        back to ``logging.INFO`` — use `InvalidLevelError`
-        at your call-site when strict validation is required.
+        Accepts level names, case-insensitive (``"DEBUG"``, custom names too), and
+        integers ``0`` or above.  If never called, `default_level` decides: ``INFO``,
+        or ``WARNING`` when ``minimalist`` is in the logger (e.g. ``observer``).
 
         Args:
-            level: Logging level — string name or integer constant.
+            level: Logging level — name or integer.
         Returns:
             ``self``, for method chaining.
+        Raises:
+            `InvalidLevelError`: For an unknown name or an invalid number.
         Example::
             lab().with_level("WARNING").build(__name__)
             lab().with_level(logging.DEBUG).build(__name__)
@@ -199,6 +205,30 @@ class LabBuilder:
 
         return self
 
+    def with_subscriber(self, callback: Subscriber, level: int | str | None = None) -> "LabBuilder":
+        """
+        Hand every record to *callback* as it is logged (the ``relay`` experiment).
+
+        Queues ``relay`` automatically if nothing else did.  Each call adds a
+        subscriber, with its own optional *level*; ``None`` lets the logger's level
+        decide.  The callback gets the `logging.LogRecord` itself — treat it as
+        read-only.  With ``async`` it runs on the dispatch worker thread, otherwise
+        on the thread that logged; for Qt, pass a signal's ``emit``.
+
+        Args:
+            callback: Called with each record that passes *level*.
+            level:    Minimum level for this subscriber — name or integer, or ``None``.
+        Returns:
+            ``self``, for method chaining.
+        Example::
+            lab().with_profile("gui").with_subscriber(relay.record_logged.emit).build("LabFrame.feedback")
+            lab().with_experiment("standard").with_subscriber(alerts.append, level="ERROR").build(__name__)
+        """
+
+        self._subscribers.append((callback, None if level is None else normalize_level_name(level)))
+
+        return self
+
     def plan(self) -> list[ExperimentType | TheoryType]:
         """
         Return the experiments and theories `build()` will build, in order.
@@ -210,6 +240,8 @@ class LabBuilder:
            `DuplicateExperimentWarning` and is skipped — the first wins.
         2. Two *different* experiments on the same channel raise
            `ExperimentClashError` naming both and where each came from.
+
+        Subscribers bring ``relay`` with them if it isn't already planned.
 
         Safe to call on its own to check a composition without building
         anything — no handlers are created and no files are opened.
@@ -235,6 +267,9 @@ class LabBuilder:
             queued += [(exp, origin) for exp in get_profile_experiments(self._profile)]
 
         queued += [(entry, "queued") for entry in self._experiments]
+
+        if self._subscribers and ExperimentType.RELAY not in {entry for entry, _ in queued}:
+            queued.append((ExperimentType.RELAY, "added by with_subscriber()"))
 
         if not queued:
             raise BuilderError("<plan>")
@@ -268,9 +303,10 @@ class LabBuilder:
         Construction order:
         1. `plan()` the composition — raises before anything is touched, so a
            bad composition never wipes an existing logger.
-        2. Build every planned handler (level, file args, a theory's own options,
-           and the logger name for file sharing) and swap them onto the logger in
-           one step (`install_handlers`) — a thread logging meanwhile sees the old
+        2. Build every planned output (level, file args, a theory's own options,
+           subscribers, and the logger name for file sharing); a dispatcher
+           (``async``) then wraps them.  Swap the result onto the logger in one
+           step (`install_handlers`) — a thread logging meanwhile sees the old
            handlers or the new ones, never a mix.  The old handlers are released.
         3. Set the final level and disable propagation.
 
@@ -298,15 +334,22 @@ class LabBuilder:
             logger = lab().with_profile("investigator").with_file_args("/var/log/myapp").build(__name__)
         """
 
-        if self._profile is None and not self._experiments:
+        if self._profile is None and not self._experiments and not self._subscribers:
             raise BuilderError(name)
 
         plan = self.plan()
+        level = self._level if self._level is not None else default_level(plan)
         logger = getLogger(name)
 
         # File args are empty unless with_file_args() was called, so factories keep their own defaults.
         # logger_name lets file experiments share one handler per file across loggers.
-        factories = []
+        shared_kwargs: dict[str, object] = {"logger_name": name}
+
+        if self._subscribers:
+            shared_kwargs["subscribers"] = tuple(self._subscribers)
+
+        outputs = []
+        dispatch = None
 
         for entry in plan:
 
@@ -318,13 +361,36 @@ class LabBuilder:
                 factory = get_experiment(entry)
                 kwargs = self._file_args
 
-            factories.append(partial(factory, self._level, **{**kwargs, "logger_name": name}))
+            call = partial(factory, level, **{**kwargs, **shared_kwargs})
 
-        install_handlers(logger, factories)
-        logger.setLevel(self._level)
+            if is_dispatcher(factory):  # at most one: dispatchers share the DISPATCH channel
+                dispatch = call
+            else:
+                outputs.append(call)
+
+        install_handlers(logger, outputs, dispatcher=dispatch)
+        logger.setLevel(level)
         logger.propagate = False
 
         return logger
+
+
+def default_level(plan: list[ExperimentType | TheoryType]) -> int:
+    """
+    Return the level a logger gets when `with_level()` wasn't called.
+
+    ``INFO``, except ``WARNING`` when *plan* includes ``minimalist`` — which exists to
+    stay quiet until something matters (the ``observer`` profile is just ``minimalist``).
+
+    Args:
+        plan: The build order from `LabBuilder.plan()`.
+    Returns:
+        ``logging.WARNING`` or ``logging.INFO``.
+    Example::
+        default_level([ExperimentType.MINIMALIST, ExperimentType.FILE])  # → WARNING
+    """
+
+    return WARNING if ExperimentType.MINIMALIST in plan else INFO
 
 
 def lab() -> LabBuilder:

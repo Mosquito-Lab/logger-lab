@@ -28,15 +28,22 @@ from logger_lab.logging_kernel.errors import (
 )
 from logger_lab.logging_kernel.formatters import (
     JSONFormatter,
-    build_console_formatter,
     build_file_formatter,
     log_event,
+)
+from logger_lab.logging_kernel.dispatch import (
+    AsyncHandler,
+    dispatcher,
+    drain,
+    is_dispatcher,
+    stop_worker,
 )
 from logger_lab.logging_kernel.handlers import (
     LAB_HANDLERS,
     SHARED_FILES,
     SharedFileHandler,
     SharedRotatingFileHandler,
+    SharedTimedRotatingFileHandler,
     StayClosedMixin,
     configure_handler,
     clear_handlers,
@@ -82,7 +89,6 @@ __all__ = [
     "log_event",
     "JSONFormatter",
     "build_file_formatter",
-    "build_console_formatter",
     # handler utilities
     "get_log_dir",
     "clear_handlers",
@@ -95,7 +101,14 @@ __all__ = [
     "SHARED_FILES",
     "SharedFileHandler",
     "SharedRotatingFileHandler",
+    "SharedTimedRotatingFileHandler",
     "StayClosedMixin",
+    # dispatch
+    "AsyncHandler",
+    "dispatcher",
+    "drain",
+    "is_dispatcher",
+    "stop_worker",
     # normalizers
     "normalize_exp_name",
     "normalize_level_name",

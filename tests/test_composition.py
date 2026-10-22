@@ -7,7 +7,7 @@ from rich.logging import RichHandler
 
 from logger_lab import (
     BuilderError, Channel, DuplicateExperimentWarning, ExperimentClashError, ExperimentType, ProfileType,
-    get_logger, lab,
+    lab,
 )
 from logger_lab.core.registry import CHANNELS, find_channel_clash
 from logger_lab.logging_kernel import SharedFileHandler, SharedRotatingFileHandler
@@ -26,6 +26,8 @@ def test_every_experiment_has_a_channel():
         ExperimentType.FILE: Channel.FILE,
         ExperimentType.ROTATING_FILE: Channel.FILE,
         ExperimentType.AI: Channel.JSON,
+        ExperimentType.RELAY: Channel.LIVE,
+        ExperimentType.ASYNC: Channel.DISPATCH,
     }
 
 
@@ -52,7 +54,7 @@ def test_profile_and_experiment_clash_names_the_profile():
         lab().with_profile("investigator").with_experiment("ROTATING").build("clash")
 
     with pytest.raises(ExperimentClashError, match="CONSOLE"):
-        get_logger("clash2", profile="investigator", experiment="minimalist")
+        lab().with_profile("investigator").with_experiment("minimalist").build("clash2")
 
 
 def test_one_of_each_channel_composes():
@@ -110,6 +112,6 @@ def test_profiles_never_clash_internally(profile):
 def test_conspiracy_theorist_is_verbose_plus_rotating_only():
     """Step 1: `rotating_file` replaces `file` — no second handler on the same file."""
 
-    logger = get_logger("ct", profile="conspiracy_theorist")
+    logger = lab().with_profile("conspiracy_theorist").build("ct")
 
     assert [type(h) for h in logger.handlers] == [logging.StreamHandler, SharedRotatingFileHandler]

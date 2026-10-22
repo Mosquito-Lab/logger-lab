@@ -1,3 +1,13 @@
+"""
+Formatters and the structured-event helper.
+
+* `JSONFormatter` — the **Mosquito Lab Logging Standard v1.1** (used by the ``ai`` experiment).
+* `build_file_formatter` — the line format both file experiments write.
+* `log_event` — log a structured event without building ``extra=`` by hand.
+
+Formatters hold no state between records, so they are safe on any thread.
+"""
+
 import json
 import logging
 from datetime import datetime, timezone
@@ -50,17 +60,24 @@ def log_event(
 class JSONFormatter(logging.Formatter):
     """
     Structured formatter that serializes every record as a JSON object.
-    Conforms to the **Mosquito Lab Logging Standard v1**:
+    Conforms to the **Mosquito Lab Logging Standard v1.1**:
 
     {
         "timestamp": "2026-05-05T10:00:00+00:00",
-        "level":     "INFO",
-        "message":   "User logged in",
+        "level":     "ERROR",
+        "logger":    "app.auth",
+        "message":   "Login failed",
         "source": {
             "module":   "auth",
             "function": "login",
             "line":     88
         },
+        "exception": {
+            "type":      "ValueError",
+            "message":   "bad token",
+            "traceback": "Traceback (most recent call last): ..."
+        },
+        "stack": "Stack (most recent call last): ...",
         "extra": {
             "event":   "user_login",
             "context": {"user_id": 42},
@@ -68,23 +85,24 @@ class JSONFormatter(logging.Formatter):
         }
     }
 
-    Any fields injected via ``extra=`` on the log call are collected
-    under the top-level ``"extra"`` key.  Standard `logging.LogRecord`
-    attributes are filtered out so they do not pollute that namespace.
+    ``exception`` appears only when the record carries one (``logger.exception()``,
+    ``exc_info=True``), ``stack`` only with ``stack_info=True``, and ``extra`` only when
+    fields were injected via ``extra=``.  v1.1 adds ``logger``, ``exception`` and
+    ``stack`` to v1; every v1 field is unchanged.
 
-    Non-serializable values fall back to `str` via json.dumps() ``default=str``.
+    Standard `logging.LogRecord` attributes are filtered out of ``extra`` so they don't
+    pollute it.  Non-serializable values fall back to `str` via json.dumps() ``default=str``.
     """
 
-    # Build the exclusion set once at class definition time using a real
-    # LogRecord so we catch every attribute the stdlib adds automatically.
-    _STANDARD_ATTRS = frozenset(
+    # Built once from a real LogRecord, so every attribute the stdlib adds is excluded from "extra".
+    STANDARD_ATTRS = frozenset(
         logging.LogRecord(
             name="", level=0, pathname="", lineno=0,
             msg="", args=(), exc_info=None,
         ).__dict__.keys()
     ) | {"message"}  # "message" is synthesized by Formatter.format — exclude it too
 
-    # **Mosquito Lab Logging Standard v1**
+    # **Mosquito Lab Logging Standard v1.1**
     def format(self, record: logging.LogRecord) -> str:
         """
         Serialize *record* to a JSON string.
@@ -96,9 +114,10 @@ class JSONFormatter(logging.Formatter):
         """
 
         # A log entry
-        entry = {
+        entry: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
+            "logger": record.name,
             "message": record.getMessage(),
             "source": {
                 "module": record.module,
@@ -107,9 +126,20 @@ class JSONFormatter(logging.Formatter):
             },
         }
 
-        # Any extra content not caught in the STANDARD_ATTRS
+        if record.exc_info and record.exc_info[0] is not None:
+            exc_type, exc_value, _ = record.exc_info
+            entry["exception"] = {
+                "type": exc_type.__name__,
+                "message": str(exc_value),
+                "traceback": self.formatException(record.exc_info),
+            }
+
+        if record.stack_info:
+            entry["stack"] = self.formatStack(record.stack_info)
+
+        # Any extra content not caught in STANDARD_ATTRS
         extras = {
-            k: v for k, v in record.__dict__.items() if k not in self._STANDARD_ATTRS
+            k: v for k, v in record.__dict__.items() if k not in self.STANDARD_ATTRS
         }
 
         # Adds the extras to the entry
@@ -134,19 +164,3 @@ def build_file_formatter() -> logging.Formatter:
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-# Schema for the console formatter
-def build_console_formatter() -> logging.Formatter:
-    """
-    Return a minimal `logging.Formatter` for plain console output.
-
-    Outputs the message only; Rich handlers supply their own formatting
-    so this is used by non-Rich console handlers (e.g. ``verbose``,
-    ``minimalist``).
-
-    Returns:
-        A configured `logging.Formatter` instance.
-    """
-
-    return logging.Formatter(fmt="%(message)s", datefmt="[%X]")

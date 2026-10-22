@@ -12,14 +12,14 @@ into the JSON payload without mutating ``extra`` by hand.
 Used by the ``ai_agent`` profile.
 """
 
-from logging import DEBUG, Handler, StreamHandler
+from logging import INFO, Handler, StreamHandler
 
 from logger_lab.logging_kernel.formatters import JSONFormatter
 from logger_lab.logging_kernel.handlers import configure_handler
 
 
 # noinspection PyUnusedLocal
-def ai_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
+def ai_experiment(level: int = INFO, **kwargs: object) -> list[Handler]:
     """
     Return a `StreamHandler` with `JSONFormatter`.
 
@@ -29,7 +29,7 @@ def ai_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
 
     Args:
         level:    Logging level for the handler.
-                  Defaults to `logging.DEBUG`.
+                  Defaults to `logging.INFO`.
         **kwargs: Reserved for future extension.
     Returns:
         A single-element list containing the configured

@@ -1,42 +1,67 @@
+"""
+Name resolution: turn whatever a caller passed (an enum member, a value string, a level
+name or number) into the one form the builder works with — or raise a typed error.
+
+The single owner of "what does this name mean" (Standards §2.6): the builder's ``with_*``
+methods call these, so every entry point resolves names the same way.
+"""
+
 import logging
 from typing import TYPE_CHECKING
 
 from logger_lab.logging_kernel.errors import (
     InvalidExperimentName, InvalidProfileName, InvalidTheoryName, InvalidLevelError,
 )
-from logger_lab.core.registry import ExperimentType, ProfileType
 
-if TYPE_CHECKING:  # type-only: a runtime import here would join the registry import cycle (KN-3)
-    from logger_lab.core.enums import TheoryType
+if TYPE_CHECKING:  # type-only: the enums are imported inside each function, because a module-level
+    # import of logger_lab.core would load the registry, which imports this module (KN-3)
+    from logger_lab.core.enums import ExperimentType, ProfileType, TheoryType
 
 
-# logger.DEBUG or 1
+# logging.DEBUG, "debug" or a custom level
 def normalize_level_name(level: int | str) -> int:
     """
-    Coerce a level value to a :mod:`logging` integer constant.
+    Coerce a level value to a :mod:`logging` integer level, or raise.
 
-    Accepts both string names (``"DEBUG"``, case-insensitive) and integer
-    constants (``logging.DEBUG``).  Unknown string names fall back to
-    ``logging.INFO`` — use `InvalidLevelError` at the call-site when strict validation is required.
+    Accepts level names, case-insensitive (``"debug"``, ``"WARNING"``, the stdlib
+    aliases ``"WARN"``/``"FATAL"``, and custom names added with `logging.addLevelName`),
+    and any integer ``0`` or above, since the stdlib allows custom numeric levels.
 
     Args:
-        level: Logging level as a string name or integer constant.
+        level: Logging level as a name or an integer.
     Returns:
         An integer logging level.
+    Raises:
+        `InvalidLevelError`: For an unknown name, a negative number, or any other type
+            (``bool``, ``float``, ``None``, …).
     Example::
         normalize_level_name("debug")          # → 10  (logging.DEBUG)
         normalize_level_name(logging.WARNING)  # → 30
-        normalize_level_name("NONSENSE")       # → 20  (logging.INFO, soft fallback)
+        normalize_level_name("DEBG")           # → raises InvalidLevelError
     """
 
-    if isinstance(level, str):
-        return getattr(logging, level.upper(), logging.INFO)
+    if isinstance(level, int) and not isinstance(level, bool):
+        if level >= 0:
+            return level
 
-    try:
-        return level
+    elif isinstance(level, str):
+        resolved = level_names().get(level.upper())
 
-    except InvalidLevelError:
-        return logging.DEBUG
+        if resolved is not None:
+            return resolved
+
+    raise InvalidLevelError(level)
+
+
+def level_names() -> dict[str, int]:
+    """Return every level name logging knows — built-in, aliases and `addLevelName` ones — mapped to its number."""
+
+    mapping = getattr(logging, "getLevelNamesMapping", None)  # Python 3.11+
+
+    if mapping is not None:
+        return mapping()
+
+    return dict(logging._nameToLevel)  # Python 3.10: the same table getLevelNamesMapping() copies
 
 
 # 'standard' or ExperimentType.STANDARD
@@ -152,15 +177,3 @@ def normalize_theory_name(theory: "TheoryType | str") -> "TheoryType":
     except ValueError:
         raise InvalidTheoryName(theory)
 
-
-# Test case and example usage
-def _test_case(normalizer, arg):
-    """ Tests normalizer functionality """
-
-    print(normalizer(arg))
-
-if __name__ == "__main__":
-
-    _test_case(normalize_level_name, "debug")
-    _test_case(normalize_exp_name, "standard")
-    _test_case(normalize_profile_name, "investigator")

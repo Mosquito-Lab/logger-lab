@@ -7,11 +7,10 @@ critical events surface.  The observer stays quiet until something actually matt
 
 from logging import WARNING, Logger
 
-from logger_lab.profiles._base import _build_profile
+from logger_lab.profiles.base import build_profile
 from logger_lab.experiments.minimalist import minimalist_experiment
 
-#: Experiments this profile is built from, in order — one console.
-OBSERVER_EXPERIMENTS = (minimalist_experiment,)
+OBSERVER_EXPERIMENTS = (minimalist_experiment,)  # Built from, in order: one console
 
 
 def observer(name: str, level: int = WARNING, **kwargs: object) -> Logger:
@@ -33,4 +32,4 @@ def observer(name: str, level: int = WARNING, **kwargs: object) -> Logger:
         logger.debug("This is silent")              # → (nothing)
     """
 
-    return _build_profile(name, level, *OBSERVER_EXPERIMENTS, **kwargs)
+    return build_profile(name, level, *OBSERVER_EXPERIMENTS, **kwargs)

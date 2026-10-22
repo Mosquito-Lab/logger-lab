@@ -8,22 +8,20 @@ need maximum context without the overhead of writing to disk.
 Used by the ``conspiracy_theorist`` profile.
 """
 
-from logging import DEBUG, Handler, Formatter, StreamHandler
+from logging import INFO, Handler, Formatter, StreamHandler
 
 from logger_lab.logging_kernel.handlers import configure_handler
 
-#: Format string used by the verbose handler.
-_VERBOSE_FMT = (
+VERBOSE_FMT = (  # Every standard field on one line
     "%(asctime)s | %(name)-20s | %(levelname)-8s | "
     "%(module)s.%(funcName)s:%(lineno)d | %(message)s"
 )
 
-#: Date format — ISO-8601 date/time, no timezone suffix (local time).
-_DATE_FMT = "%Y-%m-%d %H:%M:%S"
+DATE_FMT = "%Y-%m-%d %H:%M:%S"  # ISO-8601 date and time, local, no timezone suffix
 
 
 # noinspection PyUnusedLocal
-def verbose_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
+def verbose_experiment(level: int = INFO, **kwargs: object) -> list[Handler]:
     """
     Return a plain `~logging.StreamHandler` with full-context formatting.
 
@@ -33,7 +31,7 @@ def verbose_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
 
     Args:
         level:    Logging level for the handler.
-                  Defaults to :data:`logging.DEBUG`.
+                  Defaults to :data:`logging.INFO`.
         **kwargs: Reserved for future extension.
     Returns:
         A single-element list containing the configured `~logging.StreamHandler`.
@@ -43,7 +41,7 @@ def verbose_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
             logger.addHandler(h)
     """
 
-    formatter = Formatter(fmt=_VERBOSE_FMT, datefmt=_DATE_FMT)
+    formatter = Formatter(fmt=VERBOSE_FMT, datefmt=DATE_FMT)
     handler = StreamHandler()
 
     return [configure_handler(handler, level, formatter)]

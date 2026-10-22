@@ -10,16 +10,15 @@ Pair with `log_event` to attach ``event``, ``context``, and ``tags`` fields
 to individual records.
 """
 
-from logging import DEBUG, Logger
+from logging import INFO, Logger
 
 from logger_lab.experiments.ai import ai_experiment
-from logger_lab.profiles._base import _build_profile
+from logger_lab.profiles.base import build_profile
 
-#: Experiments this profile is built from, in order — one json.
-AI_AGENT_EXPERIMENTS = (ai_experiment,)
+AI_AGENT_EXPERIMENTS = (ai_experiment,)  # Built from, in order: one json
 
 
-def ai_agent(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
+def ai_agent(name: str, level: int = INFO, **kwargs: object) -> Logger:
     """
     Return a logger that emits structured JSON to stderr.
 
@@ -28,7 +27,7 @@ def ai_agent(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
 
     Args:
         name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.DEBUG`.
+        level: Logging level.  Defaults to `logging.INFO`.
         **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
     Returns:
         A configured `logging.Logger` with ``propagate = False``.
@@ -43,4 +42,4 @@ def ai_agent(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
         )
     """
 
-    return _build_profile(name, level, *AI_AGENT_EXPERIMENTS, **kwargs)
+    return build_profile(name, level, *AI_AGENT_EXPERIMENTS, **kwargs)

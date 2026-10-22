@@ -13,7 +13,7 @@ to one ``app.log`` at their own levels.
 Used by the ``investigator`` profile.
 """
 
-from logging import DEBUG, NOTSET, Handler
+from logging import INFO, NOTSET, Handler
 from pathlib import Path
 
 from logger_lab.logging_kernel.formatters import build_file_formatter
@@ -23,7 +23,7 @@ from logger_lab.logging_kernel.constants import DEFAULT_LOG_DIR, DEFAULT_FILENAM
 
 # noinspection PyUnusedLocal
 def file_experiment(
-    level: int = DEBUG,
+    level: int = INFO,
     *,
     log_dir: Path | str = DEFAULT_LOG_DIR,
     filename: str = DEFAULT_FILENAME,

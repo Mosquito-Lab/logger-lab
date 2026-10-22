@@ -26,9 +26,14 @@ def test_defaults_write_to_logs_app_log():
 
 @pytest.mark.parametrize("experiment", list(ExperimentType))
 def test_every_experiment_accepts_file_args(experiment):
-    """Console experiments ignore file args; file experiments honour them."""
+    """Console experiments ignore file args; file experiments honour them.  (``ASYNC`` needs an output.)"""
 
-    logger = lab().with_experiment(experiment).with_file_args("out", filename="run.log").build(f"fa.{experiment.value}")
+    builder = lab().with_experiment(experiment).with_file_args("out", filename="run.log")
+
+    if experiment is ExperimentType.ASYNC:
+        builder = builder.with_experiment("FILE")
+
+    logger = builder.build(f"fa.{experiment.value}")
 
     assert all(p == str(Path("out/run.log").resolve()) for p in file_paths(logger))
 

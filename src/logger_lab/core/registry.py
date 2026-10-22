@@ -8,7 +8,7 @@ at registration time.
 
 Two more dicts carry the composition rules the builder enforces:
 
-* ``CHANNELS`` — the `Channel` (console, file, JSON) each experiment and theory owns.
+* ``CHANNELS`` — the `Channel` (console, file, JSON, live, dispatch) each experiment and theory owns.
   A logger holds at most one experiment per channel.
 * ``PROFILE_EXPERIMENTS`` — the experiments each profile is built from, so a profile
   can be checked against whatever else is queued.
@@ -21,6 +21,7 @@ import inspect
 from typing import Callable, Iterable, Protocol, runtime_checkable
 
 from logger_lab.core.enums import Channel, ExperimentType, ProfileType, TheoryType
+from logger_lab.logging_kernel.dispatch import is_dispatcher
 from logger_lab.logging_kernel.errors import (
     ExperimentNotFoundError, ExperimentRegistrationError,
     ProfileNotFoundError, ProfileRegistrationError,
@@ -75,12 +76,13 @@ PROFILE_EXPERIMENTS : dict[ProfileType, tuple[ExperimentType, ...]] = {}
 # Registration helpers — validate then insert #
 ###############################################
 
+# The _validate_* helpers keep their underscore: they are the internal half of register_*, never called alone.
 def _validate_experiment(exp_enum: ExperimentType | TheoryType, lab_experiment: object) -> None:
     """
     Checks performed:
 
     * *experiment* must be callable.
-    * *experiment* must accept at least one positional parameter (``level``).
+    * *experiment* must accept at least one named parameter (``level``) — ``*args``/``**kwargs`` don't count.
 
     Args:
         exp_enum: The `ExperimentType` being registered.
@@ -99,10 +101,6 @@ def _validate_experiment(exp_enum: ExperimentType | TheoryType, lab_experiment: 
         params = [
             p for p in sig.parameters.values()
             if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-            and p.kind not in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            )
         ]
 
     except (ValueError, TypeError) as err:
@@ -111,7 +109,7 @@ def _validate_experiment(exp_enum: ExperimentType | TheoryType, lab_experiment: 
     if len(params) < 1:
         raise ExperimentRegistrationError(
             exp_enum,
-            "lab experiment must accept at least one positional parameter ('level')"
+            "lab experiment must accept at least one named parameter ('level')"
         )
 
 
@@ -120,14 +118,14 @@ def _validate_profile(profile_enum: ProfileType, lab_profile: object) -> None:
     Checks performed:
 
     * *profile* must be callable.
-    * *profile* must accept at least two positional parameters (``name``, ``level``).
+    * *profile* must accept at least two named parameters (``name``, ``level``) — ``*args``/``**kwargs`` don't count.
 
     Args:
         profile_enum: The `ProfileType` being registered.
         lab_profile: The callable to validate.
     Raises:
         `ProfileRegistrationError`:
-            if *factory* does not satisfy :class:`ProfileFactory`.
+            if *lab_profile* does not satisfy `LabProfile`.
     """
 
     if not callable(lab_profile):
@@ -139,10 +137,6 @@ def _validate_profile(profile_enum: ProfileType, lab_profile: object) -> None:
         params = [
             p for p in sig.parameters.values()
             if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-            and p.kind not in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            )
         ]
 
     except (ValueError, TypeError) as err:
@@ -151,7 +145,25 @@ def _validate_profile(profile_enum: ProfileType, lab_profile: object) -> None:
     if len(params) < 2:
         raise ProfileRegistrationError(
             profile_enum,
-            "lab profile must accept at least two positional parameters ('name', 'level')"
+            "lab profile must accept at least two named parameters ('name', 'level')"
+        )
+
+
+def _validate_dispatch_channel(exp_enum: ExperimentType | TheoryType, lab_experiment: object, channel: Channel) -> None:
+    """
+    Check that *lab_experiment* is on the ``DISPATCH`` channel exactly when it is a `dispatcher`.
+
+    The builder wraps a logger's outputs with whatever is on ``DISPATCH``, so a mismatch
+    would either wrap with an ordinary handler factory or add a dispatcher as an output.
+
+    Raises:
+        `ExperimentRegistrationError`: If the channel and the ``@dispatcher`` mark disagree.
+    """
+
+    if (channel is Channel.DISPATCH) != is_dispatcher(lab_experiment):
+        raise ExperimentRegistrationError(
+            exp_enum,
+            "only a @dispatcher factory may use the DISPATCH channel, and a dispatcher must use it",
         )
 
 
@@ -173,6 +185,7 @@ def register_experiment(exp_enum: ExperimentType, lab_experiment: Callable, chan
     """
 
     _validate_experiment(exp_enum, lab_experiment)
+    _validate_dispatch_channel(exp_enum, lab_experiment, channel)
     EXPERIMENTS[exp_enum] = lab_experiment
     CHANNELS[exp_enum] = channel
 
@@ -244,6 +257,7 @@ def register_theory(theory_enum: TheoryType, lab_theory: Callable, channel: Chan
     """
 
     _validate_experiment(theory_enum, lab_theory)
+    _validate_dispatch_channel(theory_enum, lab_theory, channel)
     THEORIES[theory_enum] = lab_theory
     CHANNELS[theory_enum] = channel
 
@@ -403,12 +417,18 @@ from logger_lab.experiments.minimalist    import minimalist_experiment
 from logger_lab.experiments.file          import file_experiment
 from logger_lab.experiments.rotating_file import rotating_file_experiment
 from logger_lab.experiments.ai            import ai_experiment
+from logger_lab.experiments.relay         import relay_experiment
+from logger_lab.experiments.asynchronous  import async_experiment
 
 # PROFILES
 from logger_lab.profiles.observer            import observer, OBSERVER_EXPERIMENTS
 from logger_lab.profiles.investigator        import investigator, INVESTIGATOR_EXPERIMENTS
 from logger_lab.profiles.conspiracy_theorist import conspiracy_theorist, CONSPIRACY_THEORIST_EXPERIMENTS
 from logger_lab.profiles.ai_agent            import ai_agent, AI_AGENT_EXPERIMENTS
+from logger_lab.profiles.gui                 import gui, GUI_EXPERIMENTS
+
+# THEORIES
+from logger_lab.theories.timed_file_exp import timed_file_experiment
 
 # REGISTER EXPERIMENTS
 for _exp_key, _exp_fn, _channel in [
@@ -418,6 +438,8 @@ for _exp_key, _exp_fn, _channel in [
     (ExperimentType.FILE,          file_experiment,          Channel.FILE),
     (ExperimentType.ROTATING_FILE, rotating_file_experiment, Channel.FILE),
     (ExperimentType.AI,            ai_experiment,            Channel.JSON),
+    (ExperimentType.RELAY,         relay_experiment,         Channel.LIVE),
+    (ExperimentType.ASYNC,         async_experiment,         Channel.DISPATCH),
 ]:
     register_experiment(_exp_key, _exp_fn, _channel)
 
@@ -427,10 +449,13 @@ for _prof_key, _prof_fn, _prof_exps in [
     (ProfileType.INVESTIGATOR, investigator,        INVESTIGATOR_EXPERIMENTS),
     (ProfileType.CONSPIRATOR,  conspiracy_theorist, CONSPIRACY_THEORIST_EXPERIMENTS),
     (ProfileType.AGENT,        ai_agent,            AI_AGENT_EXPERIMENTS),
+    (ProfileType.GUI,          gui,                 GUI_EXPERIMENTS),
 ]:
     register_profile(_prof_key, _prof_fn, _prof_exps)
 
-# REGISTER THEORIES — add a theory here once its factory works (the trial stage):
-#     from logger_lab.theories.timed_file_exp import timed_file_experiment
-#     register_theory(TheoryType.TIMED_FILE, timed_file_experiment, Channel.FILE)
-# None have left the placeholder stage yet, so THEORIES starts empty.
+# REGISTER THEORIES — a theory is registered once its factory works (the trial stage, Standards §3.4).
+# The rest of TheoryType are placeholders and raise TheoryNotFoundError when selected.
+for _theory_key, _theory_fn, _channel in [
+    (TheoryType.TIMED_FILE, timed_file_experiment, Channel.FILE),
+]:
+    register_theory(_theory_key, _theory_fn, _channel)

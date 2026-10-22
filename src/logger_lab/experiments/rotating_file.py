@@ -21,7 +21,7 @@ record is captured at maximum detail with automatic housekeeping.
 """
 
 from pathlib import Path
-from logging import DEBUG, NOTSET, Handler
+from logging import INFO, NOTSET, Handler
 
 from logger_lab.logging_kernel.formatters import build_file_formatter
 from logger_lab.logging_kernel.handlers import (
@@ -33,7 +33,7 @@ from logger_lab.logging_kernel.constants import (DEFAULT_LOG_DIR, DEFAULT_FILENA
 
 # noinspection PyUnusedLocal
 def rotating_file_experiment(
-    level: int = DEBUG,
+    level: int = INFO,
     *,
     log_dir: Path | str = DEFAULT_LOG_DIR,
     filename: str = DEFAULT_FILENAME,

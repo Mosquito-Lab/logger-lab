@@ -21,6 +21,14 @@ class ProfileType(Enum):
      CONSPIRATOR  = "CONSPIRACY_THEORIST"
 
 
+class Channel(Enum):
+     """ the output an experiment owns — a logger holds at most one experiment per channel """
+
+     CONSOLE = "CONSOLE"
+     FILE    = "FILE"
+     JSON    = "JSON"
+
+
 class TheoryType(Enum):
      """ enums for undiscovered theory types """
 

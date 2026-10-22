@@ -10,8 +10,11 @@ from logging import WARNING, Logger
 from logger_lab.profiles._base import _build_profile
 from logger_lab.experiments.minimalist import minimalist_experiment
 
+#: Experiments this profile is built from, in order — one console.
+OBSERVER_EXPERIMENTS = (minimalist_experiment,)
 
-def observer(name: str, level: int = WARNING) -> Logger:
+
+def observer(name: str, level: int = WARNING, **kwargs: object) -> Logger:
     """
     Return a logger configured for production-safe, low-noise output.
 
@@ -21,6 +24,7 @@ def observer(name: str, level: int = WARNING) -> Logger:
     Args:
         name:  Logger name, typically ``__name__``.
         level: Logging level.  Defaults to `logging.WARNING`.
+        **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
     Returns:
         A configured `logging.Logger` with ``propagate = False``.
     Example::
@@ -29,4 +33,4 @@ def observer(name: str, level: int = WARNING) -> Logger:
         logger.debug("This is silent")              # → (nothing)
     """
 
-    return _build_profile(name, level, minimalist_experiment)
+    return _build_profile(name, level, *OBSERVER_EXPERIMENTS, **kwargs)

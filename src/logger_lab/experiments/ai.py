@@ -23,7 +23,7 @@ def ai_experiment(level: int = DEBUG, **kwargs: object) -> list[Handler]:
     """
     Return a `StreamHandler` with `JSONFormatter`.
 
-    Every record is serialised to a single-line JSON object.  Stderr is
+    Every record is serialized to a single-line JSON object.  Stderr is
     used as the stream so structured output is separate from any
     application stdout.
 

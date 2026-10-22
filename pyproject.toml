@@ -1,9 +1,25 @@
 [project]
 name = "logger-lab"
-version = "0.1.1"
+version = "0.2.0"
 description = "Custom loggers to make debugging easy"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "rich>=15.0.0",
 ]
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyrefly>=1.4.0",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]

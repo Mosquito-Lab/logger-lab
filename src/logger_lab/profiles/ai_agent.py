@@ -1,7 +1,7 @@
 """
 AI Agent profile — structured JSON output for machine consumption.
 
-Applies a single `ai_experiment` handler that serialises every record
+Applies a single `ai_experiment` handler that serializes every record
 to a JSON object conforming to the Mosquito Lab Logging Standard v1.
 Output is designed to be ingested directly by LLM APIs, log aggregators,
 and automated pipelines.
@@ -15,8 +15,11 @@ from logging import DEBUG, Logger
 from logger_lab.experiments.ai import ai_experiment
 from logger_lab.profiles._base import _build_profile
 
+#: Experiments this profile is built from, in order — one json.
+AI_AGENT_EXPERIMENTS = (ai_experiment,)
 
-def ai_agent(name: str, level: int = DEBUG) -> Logger:
+
+def ai_agent(name: str, level: int = DEBUG, **kwargs: object) -> Logger:
     """
     Return a logger that emits structured JSON to stderr.
 
@@ -26,6 +29,7 @@ def ai_agent(name: str, level: int = DEBUG) -> Logger:
     Args:
         name:  Logger name, typically ``__name__``.
         level: Logging level.  Defaults to `logging.DEBUG`.
+        **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
     Returns:
         A configured `logging.Logger` with ``propagate = False``.
     Example::
@@ -39,4 +43,4 @@ def ai_agent(name: str, level: int = DEBUG) -> Logger:
         )
     """
 
-    return _build_profile(name, level, ai_experiment)
+    return _build_profile(name, level, *AI_AGENT_EXPERIMENTS, **kwargs)

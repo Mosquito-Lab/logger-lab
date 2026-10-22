@@ -15,7 +15,8 @@ def log_event(
     Fire a structured log record without exposing ``extra=`` to callers.
 
     Constructs a fresh ``extra`` dict on every call so successive log
-    statements never share mutable state.
+    statements never share mutable state.  The record's source (module,
+    function, line) is the caller of `log_event`, not this helper.
 
     Args:
         logger:  The logger to emit on.
@@ -41,13 +42,14 @@ def log_event(
             "context": context if context is not None else {},
             "tags": tags if tags is not None else [],
         },
+        stacklevel=2,  # attribute the record to our caller, not to log_event itself
     )
 
 
 # JSONFormatter
 class JSONFormatter(logging.Formatter):
     """
-    Structured formatter that serialises every record as a JSON object.
+    Structured formatter that serializes every record as a JSON object.
     Conforms to the **Mosquito Lab Logging Standard v1**:
 
     {
@@ -80,12 +82,12 @@ class JSONFormatter(logging.Formatter):
             name="", level=0, pathname="", lineno=0,
             msg="", args=(), exc_info=None,
         ).__dict__.keys()
-    ) | {"message"}  # "message" is synthesised by Formatter.format — exclude it too
+    ) | {"message"}  # "message" is synthesized by Formatter.format — exclude it too
 
     # **Mosquito Lab Logging Standard v1**
     def format(self, record: logging.LogRecord) -> str:
         """
-        Serialise *record* to a JSON string.
+        Serialize *record* to a JSON string.
 
         Args:
             record: The log record emitted by a `logging.Logger`.

@@ -12,11 +12,13 @@ profile_logger = get_logger(name="profile_test", profile="conspiracy_theorist")
 # Experiments (single handler factories):
 experiment_logger = get_logger(name="experiment_test", experiment=ExperimentType.MINIMALIST)
 
-# Fluent builder (custom composition):
+# Fluent builder (custom composition) — its own file, since profile_logger's
+# rotating handler already owns logs/app.log (one file, one experiment):
 built_logger = (
     lab()
     .with_experiment('STANDARD')
     .with_experiment(ExperimentType.FILE)
+    .with_file_args(filename="builder.log")
     .with_level(logging.DEBUG)
     .build(__name__)
 )

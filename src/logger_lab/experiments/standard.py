@@ -2,7 +2,7 @@
 Standard experiment — Rich console handler.
 
 ``standard`` is the default console experiment.  It delegates all
-formatting and colour to `rich.logging.RichHandler`, which
+formatting and color to `rich.logging.RichHandler`, which
 produces human-friendly, syntax-highlighted output with automatic
 tracebacks.
 

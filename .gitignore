@@ -1,0 +1,16 @@
+# Environments and build output
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Log output written by the experiments
+logs/
+
+# IDE (per-user files only; shared .idea settings stay tracked)
+.idea/workspace.xml

@@ -133,8 +133,11 @@ def check_timed(options: dict[str, object]) -> dict[str, object]:
     return {**options, "every": every, "unit": unit_name, "day": day_name, "at": at}
 
 
-ROTATING_SPEC = FeatureSpec(member=Feature.ROTATING, fits=FILE_ONLY, options={"max_bytes": DEFAULT_MAX_BYTES},
-                            check=check_rotating)
-TIMED_SPEC = FeatureSpec(member=Feature.TIMED, fits=FILE_ONLY,
-                         options={"every": 1, "unit": None, "day": None, "at": None, "utc": False},
-                         check=check_timed)
+ROTATING_SPEC = FeatureSpec(
+    member=Feature.ROTATING, fits=FILE_ONLY,
+    options={"max_bytes": DEFAULT_MAX_BYTES}, check=check_rotating
+)
+TIMED_SPEC = FeatureSpec(
+    member=Feature.TIMED, fits=FILE_ONLY,
+    options={"every": 1, "unit": None, "day": None, "at": None, "utc": False}, check=check_timed
+)

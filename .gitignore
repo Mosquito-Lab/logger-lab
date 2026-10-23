@@ -1,0 +1,17 @@
+# Environments and build output
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Log output (the default log_dir)
+logs/
+
+# IDE settings: machine-specific, so never tracked. The project's rules live in the
+# Standards doc and the pyrefly config, which apply in any editor.
+.idea/

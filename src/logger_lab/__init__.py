@@ -1,111 +1,80 @@
-""" logger-lab — composable Python logging, reimagined as a system """
+"""
+logger-lab: composable Python logging, reimagined as a system.
 
-from logging import DEBUG, Logger
+`lab()` is the one way to build a logger. Start from a profile, or compose the four kinds of
+building block yourself: outputs, features, formats and catalysts. Then call ``build(name)``::
 
-from logger_lab.core import TheoryType
+    from logger_lab import lab
+
+    logger = lab().with_profile("investigator").build(__name__)  # console + logs/app.log
+
+    # The same, with the file rolled over daily at 02:00
+    nightly = lab().with_profile("investigator").with_feature("TIMED", at="02:00").build("nightly")
+
+``__version__`` is the installed version, read from the package metadata.
+"""
+
+import importlib.metadata
+
 from logger_lab.core.builder import LabBuilder, lab
-from logger_lab.core.enums import ExperimentType, ProfileType
-from logger_lab.core.registry import get_experiment, get_profile
+from logger_lab.core.enums import Catalyst, Day, Feature, Format, Kind, Output, ProfileType, TheoryType, Unit
 from logger_lab.logging_kernel.errors import (
     BuilderError,
-    ExperimentNotFoundError,
-    ExperimentRegistrationError,
+    CompositionError,
     HandlerConfigurationError,
-    InvalidExperimentName,
     InvalidLevelError,
-    InvalidProfileName,
+    InvalidNameError,
     LabConfigurationError,
     LabError,
     LabRegistryError,
     LogDirectoryError,
-    ProfileNotFoundError,
-    ProfileRegistrationError,
+    LogFileClashError,
+    ProfileSuggestionWarning,
+    RegistrationError,
+    SharedFileSettingsWarning,
+    TheoryNotFoundError,
 )
+from logger_lab.logging_kernel.dispatch import drain
 from logger_lab.logging_kernel.formatters import log_event
 
+__version__ = importlib.metadata.version("logger-lab")  # pyproject.toml is the one place the version is written
+
 __all__ = [
-    # primary entry points
-    "get_logger",
+    # the composer
     "lab",
-    # types
-    "ExperimentType",
-    "ProfileType",
     "LabBuilder",
+    # names
+    "Kind",
+    "Output",
+    "Feature",
+    "Format",
+    "Catalyst",
+    "ProfileType",
+    "TheoryType",
+    # TIMED option values
+    "Unit",
+    "Day",
     # structured logging helper
     "log_event",
-    # error hierarchy — root
+    # async: wait until queued records are written
+    "drain",
+    # error hierarchy: root
     "LabError",
-    # error hierarchy — registry
+    # error hierarchy: registry
     "LabRegistryError",
-    "ExperimentNotFoundError",
-    "ProfileNotFoundError",
-    "InvalidExperimentName",
-    "InvalidProfileName",
-    # error hierarchy — configuration
+    "InvalidNameError",
+    "TheoryNotFoundError",
+    "RegistrationError",
+    # error hierarchy: configuration
     "LabConfigurationError",
     "InvalidLevelError",
+    "CompositionError",
     "HandlerConfigurationError",
     "LogDirectoryError",
-    "ExperimentRegistrationError",
-    "ProfileRegistrationError",
-    # error hierarchy — builder
+    "LogFileClashError",
+    # error hierarchy: builder
     "BuilderError",
+    # warnings
+    "ProfileSuggestionWarning",
+    "SharedFileSettingsWarning",
 ]
-
-
-def get_logger(
-        name: str,
-        *,
-        theory: TheoryType | None = None,
-        profile: ProfileType | str | None = None,
-        experiment: ExperimentType | str | None = None,
-        level: int | str = DEBUG,
-) -> Logger:
-    """
-    Return a configured `logging.Logger` in one call.
-
-    Exactly one of *profile* or *experiment* should be supplied.  If
-    both are provided the profile is applied first and the experiment
-    layered on top.  If neither is supplied `BuilderError` is raised.
-
-    Args:
-        name:       Logger name, typically ``__name__``.
-        theory:     Theory identifier — `TheoryType` member.
-        profile:    Profile identifier — `ProfileType` member or
-                    its string alias (e.g. ``"investigator"``).
-        experiment: Experiment identifier — `ExperimentType`
-                    member or its string alias (e.g. ``"standard"``).
-        level:      Logging level — string name or integer constant.
-                    Defaults to `logging.DEBUG`.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
-    Raises:
-        `BuilderError`:
-            If neither *profile* nor *experiment* is supplied.
-        `InvalidExperimentName`:
-            If *experiment* is an unrecognised string.
-        `InvalidProfileName`:
-            If *profile* is an unrecognised string.
-        `ExperimentNotFoundError`:
-            If a valid enum value has no registered factory.
-        `ProfileNotFoundError`:
-            If a valid enum value has no registered factory.
-    Examples::
-        logger = get_logger(__name__, profile="investigator")
-        logger = get_logger(__name__, experiment="AI", level="INFO")
-        logger = get_logger(__name__, profile=ProfileType.OBSERVER)
-    """
-
-    # Initialize the builder
-    builder = lab().with_level(level)
-
-    if theory is not None:
-        builder = builder.with_experiment(theory)
-
-    if profile is not None:
-        builder = builder.with_profile(profile)
-
-    if experiment is not None:
-        builder = builder.with_experiment(experiment)
-
-    return builder.build(name)

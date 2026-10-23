@@ -1,42 +1,31 @@
 """
-AI Agent profile — structured JSON output for machine consumption.
+AI Agent profile: structured JSON on the console, for machines to read.
 
-Applies a single `ai_experiment` handler that serialises every record
-to a JSON object conforming to the Mosquito Lab Logging Standard v1.
-Output is designed to be ingested directly by LLM APIs, log aggregators,
-and automated pipelines.
-
-Pair with `log_event` to attach ``event``, ``context``, and ``tags`` fields
-to individual records.
+One console with the ``JSON`` format: every record is one JSON object (Mosquito Lab Logging
+Standard v1.2), ready for LLM APIs, log aggregators and pipelines. Pair with `log_event` to
+attach ``event``, ``context`` and ``tags``.
 """
 
-from logging import DEBUG, Logger
+from typing import TYPE_CHECKING
 
-from logger_lab.experiments.ai import ai_experiment
-from logger_lab.profiles._base import _build_profile
+from logger_lab.core.enums import Format, Output, ProfileType
+from logger_lab.core.specs import ProfileSpec
+
+if TYPE_CHECKING:  # type-only: the builder imports the registry, which imports this module
+    from logger_lab.core.builder import LabBuilder
 
 
-def ai_agent(name: str, level: int = DEBUG) -> Logger:
+def ai_agent(builder: "LabBuilder") -> "LabBuilder":
     """
-    Return a logger that emits structured JSON to stderr.
+    Console + JSON.
 
-    Experiments applied:
-    * ``ai`` — `~logging.StreamHandler` with `JSONFormatter`.
-
-    Args:
-        name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.DEBUG`.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
     Example::
-        from logger_lab.logging_kernel import log_event
-
-        logger = ai_agent(__name__)
-        log_event(
-            logger, logging.INFO, "Tool call dispatched",
-            event="tool_dispatch",
-            context={"tool": "web_search", "query": "latest AI news"}
-        )
+        logger = lab().with_profile("ai_agent").build(__name__)
+        log_event(logger, logging.INFO, "Tool call dispatched", event="tool_dispatch",
+                  context={"tool": "web_search"})
     """
 
-    return _build_profile(name, level, ai_experiment)
+    return builder.with_output(Output.CONSOLE).with_format(Format.JSON, on=Output.CONSOLE)
+
+
+AI_AGENT_SPEC = ProfileSpec(member=ProfileType.AGENT, recipe=ai_agent, summary="console + JSON")

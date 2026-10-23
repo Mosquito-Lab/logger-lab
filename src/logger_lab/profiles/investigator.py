@@ -1,35 +1,30 @@
 """
-Investigator profile — everyday development workhorse.
+Investigator profile: the everyday development workhorse, console + file.
 
-Combines a Rich console handler (``standard``) with a persistent file
-handler (``file``) so every log record appears in both the terminal —
-with colour and traceback support — and a timestamped log file on disk.
+A Rich console (colors, tracebacks) and a plain-text log file at ``logs/app.log``, so every
+record shows in the terminal and stays on disk. Add features on top, e.g.
+``.with_feature("ROTATING")`` or ``.with_feature("TIMED", at="02:00")``.
 """
 
-from logging import DEBUG, Logger
+from typing import TYPE_CHECKING
 
-from logger_lab.experiments.file import file_experiment
-from logger_lab.experiments.standard import standard_experiment
-from logger_lab.profiles._base import _build_profile
+from logger_lab.core.enums import Output, ProfileType
+from logger_lab.core.specs import ProfileSpec
+
+if TYPE_CHECKING:  # type-only: the builder imports the registry, which imports this module
+    from logger_lab.core.builder import LabBuilder
 
 
-def investigator(name: str, level: int = DEBUG) -> Logger:
+def investigator(builder: "LabBuilder") -> "LabBuilder":
     """
-    Return a logger with Rich console + persistent file output.
-    Experiments applied (in order):
+    Console + file.
 
-    * ``standard`` — Rich console handler, colourised and traceback-aware.
-    * ``file``     — FileHandler writing to ``logs/app.log``.
-
-    Args:
-        name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.DEBUG`.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
     Example::
-        logger = investigator(__name__)
-        logger.debug("Inspecting payload: %s", payload)
+        logger = lab().with_profile("investigator").build(__name__)
         logger.error("Unexpected response", exc_info=True)
     """
 
-    return _build_profile(name, level, standard_experiment, file_experiment)
+    return builder.with_output(Output.CONSOLE).with_output(Output.FILE)
+
+
+INVESTIGATOR_SPEC = ProfileSpec(member=ProfileType.INVESTIGATOR, recipe=investigator, summary="console + file")

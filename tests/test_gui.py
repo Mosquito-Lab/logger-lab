@@ -5,29 +5,41 @@ import threading
 from pathlib import Path
 
 from logger_lab import drain, lab
-from logger_lab.logging_kernel import AsyncHandler, SharedRotatingFileHandler, dispatch
-from logger_lab.experiments.relay import RelayHandler
-from logger_lab.profiles import gui
+from logger_lab.logging_kernel import AsyncHandler, LabFileHandler, dispatch
+from logger_lab.outputs.relay import RelayHandler
 
 
-def feedback_logger(subscriber) -> logging.Logger:
+def feedback_logger(subscriber=None) -> logging.Logger:
     """Build ``LabFrame.feedback`` the way LabFrame will: gui profile, one subscriber, its own log dir."""
 
-    return lab().with_profile("gui").with_subscriber(subscriber).with_file_args(log_dir="user_logs").build("LabFrame.feedback")
+    builder = lab().with_profile("gui").with_output("file", log_dir="user_logs")
+
+    return (builder.with_subscriber(subscriber) if subscriber else builder).build("LabFrame.feedback")
 
 
-def test_gui_is_rotating_file_and_relay_behind_async():
-    """One AsyncHandler on the logger, wrapping the rotating file and the relay. No console."""
+def test_gui_is_a_rotating_file_and_relay_behind_async_and_works_without_subscribers():
+    """One AsyncHandler wraps the rotating file and the relay. No console. With no subscriber yet, just the file."""
 
-    logger = feedback_logger(print)
-    (handler,) = logger.handlers
+    (handler,) = feedback_logger(print).handlers
 
     assert isinstance(handler, AsyncHandler)
-    assert [type(t) for t in handler.targets] == [SharedRotatingFileHandler, RelayHandler]
+    assert [type(t) for t in handler.targets] == [LabFileHandler, RelayHandler]
+
+    quiet = feedback_logger()
+    (handler,) = quiet.handlers
+    quiet.warning("nobody listening")
+
+    assert drain(5)
+    assert isinstance(handler, AsyncHandler) and [type(t) for t in handler.targets] == [LabFileHandler]
+    assert "nobody listening" in Path("user_logs/app.log").read_text(encoding="utf-8")
 
 
 def test_child_channel_records_reach_file_and_subscriber_off_the_caller_thread(capsys):
-    """A child channel logger propagates to the feedback logger; the subscriber runs on the worker, nothing hits stdout."""
+    """
+    A child channel logger propagates to the feedback logger.
+
+    The subscriber runs on the worker, and nothing reaches stdout.
+    """
 
     seen: list[tuple[str, str, str]] = []
     feedback_logger(lambda r: seen.append((r.name, r.getMessage(), threading.current_thread().name)))
@@ -40,7 +52,7 @@ def test_child_channel_records_reach_file_and_subscriber_off_the_caller_thread(c
     assert capsys.readouterr().out == ""
 
 
-def test_logging_from_many_threads_reaches_the_subscriber_once_each():
+def test_logging_from_many_threads_reaches_the_subscriber_once_each_in_order():
     """Job worker threads logging at once: every record arrives exactly once, in each thread's order."""
 
     seen: list[str] = []
@@ -64,17 +76,4 @@ def test_logging_from_many_threads_reaches_the_subscriber_once_each():
     assert sorted(seen) == sorted(f"job {i} step {n}" for i in range(6) for n in range(200))
 
     for i in range(6):
-        steps = [int(m.split()[-1]) for m in seen if m.startswith(f"job {i} ")]
-        assert steps == list(range(200))
-
-
-def test_direct_call_takes_subscribers_too():
-    """gui(name, subscribers=...) builds the same shape without the builder."""
-
-    seen: list[str] = []
-    logger = gui("direct.gui", subscribers=((lambda r: seen.append(r.getMessage()), None),))
-
-    logger.warning("direct")
-
-    assert drain(5)
-    assert seen == ["direct"]
+        assert [int(m.split()[-1]) for m in seen if m.startswith(f"job {i} ")] == list(range(200))

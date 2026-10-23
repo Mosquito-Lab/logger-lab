@@ -47,9 +47,10 @@ def isolated_cwd(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def close_lab_handlers():
     """
-    Release every handler a test attached, then check two invariants:
-    no file handler pointed inside the repo, and the shared file table is empty
-    (every file a test opened was released — nothing leaked).
+    Release every handler a test attached, then check two invariants.
+
+    No file handler pointed inside the repo. The shared file table is empty, so
+    every file a test opened was released and nothing leaked.
     """
 
     yield

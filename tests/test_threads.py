@@ -1,39 +1,20 @@
-"""D-9: experiments, profiles and the builder are safe to use from many threads at once."""
+"""D-9: outputs, profiles and the builder are safe to use from many threads at once."""
 
 import logging
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from logger_lab import lab
+import pytest
+
+from logger_lab import drain, lab
 from logger_lab.logging_kernel import SHARED_FILES
+
+from helpers import run_together, written_lines
 
 THREADS = 8
 RECORDS = 400
-LINE = re.compile(r"^\S+ \S+ - app\.worker\d+ - INFO - work:\d+ - worker (\d+) record (\d+)$")
-
-
-def run_together(count: int, target) -> None:
-    """Start *count* threads on *target(i)* at the same moment and wait for all of them."""
-
-    barrier = threading.Barrier(count)
-
-    def start(i: int) -> None:
-        """Wait for every thread, then run."""
-
-        barrier.wait()
-        target(i)
-
-    with ThreadPoolExecutor(max_workers=count) as pool:
-        for future in [pool.submit(start, i) for i in range(count)]:
-            future.result()  # re-raise anything a thread hit
-
-
-def written_lines(log_dir: Path) -> list[str]:
-    """Return every line in ``app.log`` and its rotated copies."""
-
-    return [line for path in sorted(log_dir.glob("app.log*")) for line in path.read_text(encoding="utf-8").splitlines()]
+LINE = re.compile(r"^\S+ \S+ - app\.worker\d+ - INFO - worker (\d+) record (\d+)$")
 
 
 def test_concurrent_builds_open_the_file_once():
@@ -54,18 +35,26 @@ def test_concurrent_builds_open_the_file_once():
     assert len(SHARED_FILES) == 1 and sum(next(iter(SHARED_FILES.values())).owners.values()) == THREADS
 
 
-def test_many_threads_rotate_one_file_without_losing_a_line(capsys):
-    """Every record from every thread lands whole, exactly once, across rotations — and no WinError 32."""
+@pytest.mark.parametrize("catalysts", [(), ("ASYNC",)], ids=["plain", "async"])
+def test_many_threads_rotate_one_file_without_losing_a_line(capsys, catalysts):
+    """Standards §2.4: every record from every thread lands whole, exactly once, across rotations. No WinError 32."""
 
     def work(i: int) -> None:
         """Log RECORDS lines from module logger *i*."""
 
-        logger = lab().with_experiment("ROTATING").with_file_args(max_bytes=20_000, backup_count=100).build(f"app.worker{i}")
+        builder = lab().with_output("file", backup_count=100).with_feature("ROTATING", max_bytes=20_000)
+
+        for catalyst in catalysts:
+            builder = builder.with_catalyst(catalyst)
+
+        logger = builder.build(f"app.worker{i}")
 
         for n in range(RECORDS):
             logger.info("worker %d record %d", i, n)
 
     run_together(THREADS, work)
+
+    assert drain(10)
 
     lines = written_lines(Path("logs"))
     parsed = [LINE.match(line) for line in lines]
@@ -90,11 +79,12 @@ def test_rebuilding_while_other_threads_log():
 
         logger = logging.getLogger("app.busy")
 
+        # noinspection PyBroadException
         try:
             while not stop.is_set():
                 logger.info("tick")
 
-        except BaseException as err:  # surface to the main thread
+        except BaseException as err:  # Anything at all, surfaced to the main thread
             errors.append(err)
 
     workers = [threading.Thread(target=log_forever) for _ in range(4)]
@@ -103,7 +93,7 @@ def test_rebuilding_while_other_threads_log():
         worker.start()
 
     for i in range(50):
-        profile = "investigator" if i % 2 else "conspiracy_theorist"  # alternate FILE ↔ ROTATING on one path
+        profile = "investigator" if i % 2 else "conspiracy_theorist"  # alternate plain ↔ ROTATING on one path
         lab().with_profile(profile).build("app.busy")
 
     stop.set()

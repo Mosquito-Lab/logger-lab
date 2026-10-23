@@ -1,88 +1,90 @@
-"""Every experiment, profile and theory is selectable by enum member or value string (Standards §2.8)."""
+"""Names: every member of every kind resolves by member or value string, and a bad name says what is valid."""
+
+import logging
 
 import pytest
 
 from logger_lab import (
-    ExperimentType, InvalidExperimentName, InvalidProfileName, InvalidTheoryName, ProfileType,
-    TheoryNotFoundError, TheoryType, lab,
+    Catalyst, Feature, Format, InvalidNameError, Output, ProfileType, TheoryNotFoundError, TheoryType, lab,
 )
 from logger_lab.core.registry import THEORIES
-from logger_lab.logging_kernel import normalize_exp_name, normalize_profile_name, normalize_theory_name
+from logger_lab.logging_kernel import clear_handlers, normalize_name
 
-# Members whose *name* differs from their *value* — the name as a string is not an alias.
-RENAMED = [
-    (ExperimentType.ROTATING_FILE, "ROTATING_FILE"),
-    (ProfileType.AGENT, "AGENT"),
-    (ProfileType.CONSPIRATOR, "CONSPIRATOR"),
-]
+KINDS = [(Output, "output"), (Feature, "feature"), (Format, "format"), (Catalyst, "catalyst"),
+         (ProfileType, "profile"), (TheoryType, "theory")]
 
 
-@pytest.mark.parametrize("member", list(ExperimentType))
-@pytest.mark.parametrize("form", ["member", "value", "lower"])
-def test_every_experiment_resolves_by_member_and_value(member, form):
-    """`with_experiment()` accepts the member, its value and its lowercase value — and builds with it."""
+@pytest.mark.parametrize(("enum_type", "kind"), KINDS, ids=[kind for _, kind in KINDS])
+def test_every_member_resolves_by_member_value_and_lower_case(enum_type, kind):
+    """The member, its value string and the lower-case value all resolve to the member."""
 
-    name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
-
-    assert normalize_exp_name(name) is member
-    assert lab().with_experiment(name).plan() == [member]
-
-    if member not in (ExperimentType.ASYNC, ExperimentType.RELAY):  # those need an output / a subscriber
-        assert lab().with_experiment(name).build(f"names.exp.{member.value}.{form}").handlers
+    for member in enum_type:
+        for spelling in (member, member.value, member.value.lower()):
+            assert normalize_name(enum_type, spelling, kind) is member
 
 
-@pytest.mark.parametrize("member", list(ProfileType))
-@pytest.mark.parametrize("form", ["member", "value", "lower"])
-def test_every_profile_resolves_by_member_and_value(member, form):
-    """`with_profile()` accepts the member, its value and its lowercase value — and builds with it."""
+def built(builder, name: str) -> list[logging.Handler]:
+    """Build *builder* into *name*, return its handlers, and release them (so the next build can reuse the file)."""
 
-    name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
+    logger = builder.build(name)
+    handlers = list(logger.handlers)
+    clear_handlers(logger)
 
-    assert normalize_profile_name(name) is member
-    assert lab().with_profile(name).plan()
-    assert lab().with_profile(name).build(f"names.prof.{member.value}.{form}").handlers
+    return handlers
 
 
-@pytest.mark.parametrize("member", list(TheoryType))
-@pytest.mark.parametrize("form", ["member", "value", "lower"])
-def test_every_theory_resolves_by_member_and_value(member, form):
-    """Theory names resolve both ways; a registered theory builds, a placeholder fails as one — never as a bad name."""
+def test_every_building_block_and_profile_builds():
+    """Each member of each kind builds on the smallest composition it needs."""
 
-    name = {"member": member, "value": member.value, "lower": member.value.lower()}[form]
+    for output in Output:
+        builder = lab().with_output(output.value.lower())
+        assert built(builder.with_subscriber(print) if output is Output.RELAY else builder, f"n.{output.value}")
 
-    assert normalize_theory_name(name) is member
+    for feature in Feature:
+        assert len(built(lab().with_profile("investigator").with_feature(feature.value), f"n.{feature.value}")) == 2
 
-    if member in THEORIES:
-        assert lab().with_theory(name).build(f"names.theory.{member.value}.{form}").handlers
-    else:
-        with pytest.raises(TheoryNotFoundError, match="placeholder"):
-            lab().with_theory(name).build(f"names.theory.{member.value}.{form}")
+    for format_ in Format:
+        assert built(lab().with_output("console").with_format(format_.value.lower()), f"n.{format_.value}")
 
+    for catalyst in Catalyst:
+        assert built(lab().with_output("console").with_catalyst(catalyst), f"n.{catalyst.value}")
 
-@pytest.mark.parametrize(("member", "name"), RENAMED)
-def test_member_name_string_is_not_an_alias(member, name):
-    """``"ROTATING_FILE"``/``"AGENT"``/``"CONSPIRATOR"`` are rejected — the value string is the alias."""
-
-    normalize = normalize_exp_name if isinstance(member, ExperimentType) else normalize_profile_name
-    error = InvalidExperimentName if isinstance(member, ExperimentType) else InvalidProfileName
-
-    with pytest.raises(error, match=member.value):
-        normalize(name)
+    for profile in ProfileType:
+        assert built(lab().with_profile(profile.value.lower()), f"n.{profile.value}")
 
 
-def test_invalid_names_list_the_valid_values():
-    """Each name error says which names are valid."""
+def test_a_member_name_that_differs_from_its_value_is_not_an_alias():
+    """``"AGENT"`` and ``"CONSPIRATOR"`` are rejected. The value string is the alias."""
 
-    with pytest.raises(InvalidExperimentName, match="ROTATING"):
-        lab().with_experiment("rotating_file")
-    with pytest.raises(InvalidProfileName, match="CONSPIRACY_THEORIST"):
-        lab().with_profile("ghost")
-    with pytest.raises(InvalidTheoryName, match="TIMED_FILE"):
-        lab().with_theory("ghost")
+    for name, value in (("AGENT", "AI_AGENT"), ("CONSPIRATOR", "CONSPIRACY_THEORIST")):
+        with pytest.raises(InvalidNameError, match=value):
+            lab().with_profile(name)
 
 
-def test_theory_member_is_rejected_by_with_experiment():
-    """Theories go through `with_theory()`, not `with_experiment()`."""
+@pytest.mark.parametrize(("call", "kind", "valid"), [
+    (lambda: lab().with_output("printer"), "output", "CONSOLE, FILE, RELAY"),
+    (lambda: lab().with_output("ROTATING"), "output", "CONSOLE, FILE, RELAY"),
+    (lambda: lab().with_feature("ROTATING_FILE"), "feature", "MINIMAL, VERBOSE, ROTATING, TIMED"),
+    (lambda: lab().with_format("xml"), "format", "RICH, TEXT, JSON"),
+    (lambda: lab().with_catalyst("sync"), "catalyst", "ASYNC"),
+    (lambda: lab().with_profile("ghost"), "profile", "CONSPIRACY_THEORIST"),
+    (lambda: lab().with_theory("ghost"), "theory", "THROTTLE"),
+    (lambda: lab().with_feature("MINIMAL", on="printer"), "output", "CONSOLE, FILE, RELAY"),
+], ids=["unknown output", "a feature as an output", "a removed experiment name", "format", "catalyst",
+        "profile", "theory", "on="])
+def test_a_bad_name_says_its_kind_and_the_valid_names(call, kind, valid):
+    """Each method takes only its own kind. The error names the kind and lists what is valid."""
 
-    with pytest.raises(InvalidExperimentName):
-        lab().with_experiment(TheoryType.TRACE)  # pyrefly: ignore[bad-argument-type]
+    with pytest.raises(InvalidNameError, match=f"not a recognized {kind} name.*{valid}") as err:
+        call()
+
+    assert err.value.kind == kind
+
+
+def test_a_placeholder_theory_fails_as_a_placeholder():
+    """Every theory not yet registered raises `TheoryNotFoundError`, never a bad-name error."""
+
+    for theory in TheoryType:
+        if theory not in THEORIES:
+            with pytest.raises(TheoryNotFoundError, match="placeholder"):
+                lab().with_profile("investigator").with_theory(theory.value.lower())

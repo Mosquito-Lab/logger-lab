@@ -1,48 +1,45 @@
 """
-GUI profile — for desktop apps: a rotating log file and live records, off the GUI thread.
+GUI profile for desktop apps: a rotating log file and live records, off the GUI thread.
 
-Combines ``rotating_file`` (FILE), ``relay`` (LIVE) and ``async`` (DISPATCH).  No console:
-windowed builds (``pythonw``, PyInstaller ``--windowed``) have no stdout to write to.
-Logging from the GUI thread only queues the record; the dispatch worker writes the file
-and calls the subscribers.
+A size-rotated file, the ``relay`` output (records to each subscriber) and the ``ASYNC``
+catalyst. No console: windowed builds (``pythonw``, PyInstaller ``--windowed``) have no
+stdout or stderr to write to, so a console there would drop every record. Logging from the
+GUI thread only queues the record. The dispatch worker writes the file and calls the
+subscribers.
 
-Built for LabFrame's feedback channels: pass a Qt signal's ``emit`` as the subscriber and
-Qt delivers every record on the GUI thread.  Choose a writable per-user log directory with
-`with_file_args(log_dir=...)` — an installed app's working directory may not be writable.
+Built for LabFrame's feedback channels. Pass a Qt signal's ``emit`` as the subscriber, and
+Qt delivers every record on the GUI thread. Choose a writable per-user log directory with
+``.with_output("file", log_dir=...)``, because an installed app's working directory may not
+be writable.
 """
 
-from logging import INFO, Logger
+from typing import TYPE_CHECKING
 
-from logger_lab.experiments.asynchronous import async_experiment
-from logger_lab.experiments.relay import relay_experiment
-from logger_lab.experiments.rotating_file import rotating_file_experiment
-from logger_lab.profiles.base import build_profile
+from logger_lab.core.enums import Catalyst, Feature, Output, ProfileType
+from logger_lab.core.specs import ProfileSpec
 
-GUI_EXPERIMENTS = (rotating_file_experiment, relay_experiment, async_experiment)  # File, live, dispatch
+if TYPE_CHECKING:  # type-only: the builder imports the registry, which imports this module
+    from logger_lab.core.builder import LabBuilder
 
 
-def gui(name: str, level: int = INFO, **kwargs: object) -> Logger:
+def gui(builder: "LabBuilder") -> "LabBuilder":
     """
-    Return a logger that writes a rotating file and relays records live, without blocking the caller.
+    File + ROTATING + relay + ASYNC.
 
-    Experiments applied:
-    * ``rotating_file`` — size-rotated log at ``logs/app.log`` (5 MiB, 3 backups).
-    * ``relay``         — every record to each subscriber (`LabBuilder.with_subscriber`).
-    * ``async``         — both of the above run on the dispatch worker thread.
-
-    Args:
-        name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.INFO`.
-        **kwargs: File args (``log_dir``, ``filename``, …) and ``subscribers`` forwarded to every experiment.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
     Example::
         logger = (
             lab().with_profile("gui")
             .with_subscriber(relay.record_logged.emit)
-            .with_file_args(log_dir=user_log_dir)
+            .with_output("file", log_dir=user_log_dir)
             .build("LabFrame.feedback")
         )
     """
 
-    return build_profile(name, level, *GUI_EXPERIMENTS, **kwargs)
+    return (
+        builder.with_output(Output.FILE).with_feature(Feature.ROTATING)
+        .with_output(Output.RELAY)
+        .with_catalyst(Catalyst.ASYNC)
+    )
+
+
+GUI_SPEC = ProfileSpec(member=ProfileType.GUI, recipe=gui, summary="file + ROTATING + relay + ASYNC")

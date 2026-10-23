@@ -1,38 +1,34 @@
 """
-Conspiracy Theorist profile: verbose console output plus a size-rotated log
-file.  Every record is captured at full context detail and automatically
-rotated so disk usage stays bounded.
+Conspiracy Theorist profile: capture everything, everywhere, all at once.
 
-Use when you need to sift through the grains later and leave no stone
-unturned.
+A console and a size-rotated file, both with the ``VERBOSE`` detail feature (module,
+function and line on every record), so disk use stays bounded while nothing is missed.
 """
 
-from logging import INFO, Logger
+from typing import TYPE_CHECKING
 
-from logger_lab.experiments.rotating_file import rotating_file_experiment
-from logger_lab.experiments.verbose import verbose_experiment
-from logger_lab.profiles.base import build_profile
+from logger_lab.core.enums import Feature, Output, ProfileType
+from logger_lab.core.specs import ProfileSpec
 
-CONSPIRACY_THEORIST_EXPERIMENTS = (verbose_experiment, rotating_file_experiment)  # Built from, in order: one console, one file
+if TYPE_CHECKING:  # type-only: the builder imports the registry, which imports this module
+    from logger_lab.core.builder import LabBuilder
 
 
-def conspiracy_theorist(name: str, level: int = INFO, **kwargs: object) -> Logger:
+def conspiracy_theorist(builder: "LabBuilder") -> "LabBuilder":
     """
-    Return a logger that captures everything, everywhere, all at once.
+    Console + file + VERBOSE (on both) + ROTATING (on the file).
 
-    Experiments applied (in order):
-    * ``verbose``       — full call-site context on every console line.
-    * ``rotating_file`` — size-rotated log at ``logs/app.log`` (5 MiB, 3 backups).
-
-    Args:
-        name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.INFO`.
-        **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
     Example::
-        logger = conspiracy_theorist(__name__)
-        logger.debug("Raw response: %s", raw)   # captured on the console and in the rotating file
+        logger = lab().with_profile("conspiracy_theorist").with_level("DEBUG").build(__name__)
+        logger.debug("Raw response: %s", raw)
     """
 
-    return build_profile(name, level, *CONSPIRACY_THEORIST_EXPERIMENTS, **kwargs)
+    return (
+        builder.with_output(Output.CONSOLE).with_output(Output.FILE)
+        .with_feature(Feature.VERBOSE)
+        .with_feature(Feature.ROTATING)
+    )
+
+
+CONSPIRACY_THEORIST_SPEC = ProfileSpec(member=ProfileType.CONSPIRATOR, recipe=conspiracy_theorist,
+                                       summary="console + file + VERBOSE + ROTATING")

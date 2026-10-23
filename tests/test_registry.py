@@ -1,115 +1,203 @@
-"""Registration validates factories, profile compositions and theories; lookups raise typed errors."""
+"""The registry's tables are well formed, every profile composes, and theories act as the kind they register as."""
 
+import importlib
 import logging
+import re
+from pathlib import Path
 
 import pytest
 
-from logger_lab import ExperimentType, ProfileType, TheoryNotFoundError, TheoryType, lab
+import logger_lab
+from logger_lab import (
+    CompositionError, Feature, Format, Kind, Output, ProfileType, RegistrationError, TheoryNotFoundError,
+    TheoryType, lab,
+)
 from logger_lab.core import registry
 from logger_lab.core.registry import (
-    PROFILE_EXPERIMENTS, get_profile, get_theory, register_experiment, register_profile, register_theory,
+    CATALYSTS, FEATURES, FORMATS, OUTPUTS, PROFILES, get_profile, get_theory, register_theory,
 )
-from logger_lab.core.enums import Channel
-from logger_lab.experiments import (
-    async_experiment, file_experiment, minimalist_experiment, rotating_file_experiment, standard_experiment,
-)
-from logger_lab.logging_kernel import ExperimentRegistrationError, ProfileRegistrationError
-from logger_lab.profiles import observer
+from logger_lab.core.specs import CatalystSpec, FeatureSpec, FormatSpec, OutputSpec
+
+TABLES = [(OUTPUTS, Output, OutputSpec), (FEATURES, Feature, FeatureSpec), (FORMATS, Format, FormatSpec)]
 
 
-def test_profile_with_clashing_experiments_is_rejected():
-    """A profile whose own experiments share a channel fails at registration."""
+#######################
+# The built-in tables #
+#######################
 
-    with pytest.raises(ProfileRegistrationError, match="FILE.*ROTATING|both write to the FILE channel"):
-        register_profile(ProfileType.OBSERVER, observer, (file_experiment, rotating_file_experiment))
+def test_every_member_has_a_spec_of_its_kind_under_its_own_key():
+    """Each table covers its whole enum, and each spec is the right type and sits under its own member."""
 
-    with pytest.raises(ProfileRegistrationError, match="CONSOLE"):
-        register_profile(ProfileType.OBSERVER, observer, (standard_experiment, minimalist_experiment))
+    for table, enum_type, spec_type in [*TABLES, (CATALYSTS, type(next(iter(CATALYSTS))), CatalystSpec)]:
+        assert set(table) == set(enum_type)
 
+        for member, spec in table.items():
+            assert isinstance(spec, spec_type) and spec.member is member
 
-def test_profile_with_unregistered_experiment_is_rejected():
-    """Every factory a profile declares must be a registered experiment."""
-
-    def stray_experiment(level: int, **kwargs: object) -> list:
-        """Not registered anywhere."""
-
-        return []
-
-    with pytest.raises(ProfileRegistrationError, match="stray_experiment"):
-        register_profile(ProfileType.OBSERVER, observer, (stray_experiment,))
+    assert set(PROFILES) == set(ProfileType)
+    assert all(spec.member is member for member, spec in PROFILES.items())
 
 
-def handler_shape(logger: logging.Logger) -> list:
-    """Handler types on *logger*, with a dispatcher's targets nested inside it."""
+def test_the_specs_agree_with_each_other():
+    """
+    Every feature and format fits an output. An output's default format is one it renders,
+    and a format fits exactly the outputs that render it.
+    """
 
-    return [(type(h), [type(t) for t in getattr(h, "targets", ())]) for h in logger.handlers]
+    for spec in [*FEATURES.values(), *FORMATS.values()]:
+        assert spec.fits, spec.member
 
+    for output, spec in OUTPUTS.items():
+        assert spec.default_format is None or spec.default_format in spec.formats, output
+        assert callable(spec.build)
 
-@pytest.mark.parametrize("profile", list(ProfileType))
-def test_profile_function_matches_its_declared_experiments(profile):
-    """Calling a profile directly builds exactly what the builder builds from its declared experiments."""
+    for format_, spec in FORMATS.items():
+        assert spec.fits == {output for output, output_spec in OUTPUTS.items() if format_ in output_spec.formats}
 
-    direct = get_profile(profile)(f"direct.{profile.value}", logging.DEBUG)
-    built = lab().with_profile(profile).with_level("DEBUG").build(f"built.{profile.value}")
-
-    assert handler_shape(direct) == handler_shape(built)
-    assert lab().with_profile(profile).plan() == list(PROFILE_EXPERIMENTS[profile])
-
-
-def test_dispatch_channel_and_dispatcher_mark_must_agree():
-    """An ordinary factory can't take the DISPATCH channel, and a dispatcher can't take another one."""
-
-    with pytest.raises(ExperimentRegistrationError, match="DISPATCH"):
-        register_experiment(ExperimentType.STANDARD, standard_experiment, Channel.DISPATCH)
-
-    with pytest.raises(ExperimentRegistrationError, match="DISPATCH"):
-        register_experiment(ExperimentType.ASYNC, async_experiment, Channel.CONSOLE)
+    assert all(callable(spec.build) for spec in CATALYSTS.values())
 
 
-def test_placeholder_theory_raises_typed_error():
-    """An unregistered theory is a placeholder, reported as `TheoryNotFoundError`."""
+def test_every_profile_composes():
+    """Every recipe plans without breaking a rule (its exact composition: test_composition)."""
+
+    for profile in ProfileType:
+        assert lab().with_profile(profile).plan().outputs
+
+
+def test_the_version_is_the_one_in_pyproject():
+    """PK-10: ``__version__`` comes from the package metadata, so it can't drift from ``pyproject.toml``."""
+
+    pyproject = (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+
+    match = re.search(r'^version = "(.+)"$', pyproject, re.MULTILINE)
+
+    assert match is not None and match.group(1) == logger_lab.__version__
+
+
+def test_lookups_raise_typed_errors(monkeypatch):
+    """An unregistered theory is a placeholder; a profile with no recipe is a RegistrationError, not a KeyError."""
 
     with pytest.raises(TheoryNotFoundError, match="'TRACE' is still a placeholder"):
         get_theory(TheoryType.TRACE)
 
+    monkeypatch.setattr(registry, "PROFILES", {})
 
-def test_register_theory_validates_and_records_channel(monkeypatch):
-    """A working theory registers with its channel and can then be built."""
+    with pytest.raises(RegistrationError, match="no profile recipe"):
+        get_profile(ProfileType.GUI)
+
+
+############
+# Theories #
+############
+
+@pytest.mark.parametrize(("kind", "spec", "match"), [
+    (Kind.OUTPUT, FeatureSpec(TheoryType.TRACE, fits=frozenset({Output.CONSOLE})),
+     "OUTPUT, its spec must be OutputSpec"),
+    (Kind.FEATURE, FEATURES[Feature.MINIMAL], "its member must be a TheoryType"),
+    (Kind.FEATURE, FeatureSpec(TheoryType.TRACE, fits=frozenset()), "fit at least one output"),
+    (Kind.OUTPUT, OutputSpec(TheoryType.DB, build="nope"), "not callable"),  # pyrefly: ignore[bad-argument-type]
+], ids=["wrong spec type", "a built-in member", "fits nothing", "build not callable"])
+def test_register_theory_checks_the_spec(kind, spec, match):
+    """A theory is added at runtime, so its spec is checked as it comes in."""
+
+    with pytest.raises(RegistrationError, match=match):
+        register_theory(kind, spec)
+
+
+def test_every_theory_has_an_idea_file_that_names_its_kind():
+    """TH-6: each TheoryType has an idea file, ``theories/<name>_exp.py``, that states its likely kind (§3.4)."""
+
+    for theory in TheoryType:
+        module = importlib.import_module(f"logger_lab.theories.{theory.value.lower()}_exp")
+
+        assert "\nKind: " in (module.__doc__ or ""), theory
+
+
+@pytest.fixture
+def theories(monkeypatch):
+    """An empty theory table for one test."""
 
     monkeypatch.setattr(registry, "THEORIES", {})
-    monkeypatch.setattr(registry, "CHANNELS", dict(registry.CHANNELS))
 
-    def trace_experiment(level: int, **kwargs: object) -> list:
-        """A stand-in theory with one console handler."""
-
-        return [logging.StreamHandler()]
-
-    register_theory(TheoryType.TRACE, trace_experiment, Channel.CONSOLE)
-
-    assert get_theory(TheoryType.TRACE) is trace_experiment
-    assert registry.CHANNELS[TheoryType.TRACE] is Channel.CONSOLE
-
-    with pytest.raises(ExperimentRegistrationError):
-        register_theory(TheoryType.SEC, "not callable", Channel.FILE)  # pyrefly: ignore[bad-argument-type]
+    return registry.THEORIES
 
 
-def test_registered_theory_builds_with_its_options(monkeypatch):
-    """`with_theory()` options reach only that theory's factory, on top of the file args."""
+def test_feature_theory_attaches_like_a_feature(theories):
+    """A feature theory follows the feature rules: it fits outputs, takes options, and honors on=."""
 
-    from logger_lab import lab
+    register_theory(Kind.FEATURE, FeatureSpec(TheoryType.THROTTLE, fits=frozenset({Output.CONSOLE}),
+                                              options={"per_second": 10}))
+
+    names = lab().with_profile("investigator").with_theory("throttle", per_second=20).plan().names()
+
+    assert names["CONSOLE"]["features"] == ["THROTTLE"] and names["FILE"]["features"] == []
+
+    with pytest.raises(CompositionError, match="'THROTTLE' works on console outputs, not file"):
+        lab().with_profile("investigator").with_theory("THROTTLE", on="file").plan()
+    with pytest.raises(CompositionError, match="has no option 'burst'"):
+        lab().with_profile("investigator").with_theory("THROTTLE", burst=3).plan()
+
+
+def test_output_theory_builds_like_an_output(theories):
+    """An output theory is built from its own spec, with its options merged over its defaults."""
 
     seen: dict[str, object] = {}
 
-    def timed_experiment(level: int, **kwargs: object) -> list:
-        """Records what it was called with."""
+    def build(plan) -> list[logging.Handler]:
+        """Record the options it was built with."""
 
-        seen.update(kwargs)
+        seen.update(plan.options)
 
-        return []
+        return [logging.NullHandler()]
 
-    monkeypatch.setattr(registry, "THEORIES", {TheoryType.TIMED_FILE: timed_experiment})
-    monkeypatch.setattr(registry, "CHANNELS", {**registry.CHANNELS, TheoryType.TIMED_FILE: Channel.FILE})
+    register_theory(Kind.OUTPUT, OutputSpec(TheoryType.DB, build=build, options={"table": "logs", "batch": 50}))
 
-    lab().with_theory("timed_file", when="midnight").with_file_args("t").build("timed")
+    logger = lab().with_theory("DB", batch=10).build("theory.db")
 
-    assert seen["when"] == "midnight" and seen["log_dir"] == "t"
+    assert seen == {"table": "logs", "batch": 10}
+    assert [type(h) for h in logger.handlers] == [logging.NullHandler]
+
+
+def test_catalyst_theory_wraps_the_outputs(theories):
+    """A catalyst theory receives the built outputs and returns the logger's handlers."""
+
+    wrapped: list[list[logging.Handler]] = []
+
+    def build(handlers, *, logger_name, options) -> list[logging.Handler]:
+        """Record what it wraps, change nothing."""
+
+        wrapped.append(handlers)
+
+        return handlers
+
+    register_theory(Kind.CATALYST, CatalystSpec(TheoryType.PROCESS, build=build, group="dispatch"))
+
+    lab().with_profile("observer").with_theory("PROCESS").build("theory.proc")
+
+    assert len(wrapped) == 1 and len(wrapped[0]) == 1
+
+    with pytest.raises(CompositionError, match="'ASYNC' and 'PROCESS' are both dispatch catalysts"):
+        lab().with_profile("gui").with_theory("PROCESS").plan()
+
+
+def test_on_is_refused_for_a_theory_that_cannot_use_it(theories):
+    """CR-13: on= was silently ignored for an output or catalyst theory. It only applies to features and formats."""
+
+    register_theory(Kind.OUTPUT, OutputSpec(TheoryType.DB, build=lambda plan: []))
+    register_theory(Kind.CATALYST, CatalystSpec(TheoryType.PROCESS, build=lambda handlers, **_: handlers))
+
+    with pytest.raises(CompositionError, match="'DB' is an output theory, so on= doesn't apply to it"):
+        lab().with_theory("DB", on="file")
+    with pytest.raises(CompositionError, match="'PROCESS' is a catalyst theory"):
+        lab().with_profile("observer").with_theory("PROCESS", on="console")
+
+
+def test_an_output_refuses_a_format_it_cannot_render(theories):
+    """CR-17: a format theory that fits the console planned fine and would have been written as TEXT."""
+
+    register_theory(Kind.FORMAT, FormatSpec(TheoryType.SEC, fits=frozenset({Output.CONSOLE})))
+
+    expected = "the console output can't render the 'SEC' format; the formats it renders: JSON, RICH, TEXT"
+
+    with pytest.raises(CompositionError, match=expected):
+        lab().with_output("console").with_theory("SEC").plan()

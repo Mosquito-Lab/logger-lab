@@ -1,11 +1,13 @@
-"""The JSON record schema (Mosquito Lab Logging Standard v1) and `log_event()`."""
+"""The JSON record schema (Mosquito Lab Logging Standard v1.2), the text layouts, and `log_event()`."""
 
 import inspect
 import json
 import logging
+import sys
+from datetime import datetime
 
-from logger_lab import log_event
-from logger_lab.logging_kernel import JSONFormatter
+from logger_lab import drain, lab, log_event
+from logger_lab.logging_kernel import DATE_FORMAT, TEXT_LAYOUTS, JSONFormatter, text_formatter
 
 
 class ListHandler(logging.Handler):
@@ -36,18 +38,20 @@ def json_logger(name: str) -> tuple[logging.Logger, ListHandler]:
     return logger, handler
 
 
-def test_plain_record_has_the_v1_1_fields():
-    """timestamp, level, logger, message and source — and no exception/stack/extra when there are none."""
+def test_plain_record_has_the_v1_2_fields_and_the_text_timestamp():
+    """timestamp, level, logger, message and source; nothing else. The timestamp is exactly the text format's."""
 
     logger, handler = json_logger("json.plain")
     logger.info("hello %s", "world")
 
     entry = json.loads(handler.lines[0])
+    record = logging.LogRecord("x", logging.INFO, __file__, 1, "m", (), None)
 
     assert set(entry) == {"timestamp", "level", "logger", "message", "source"}
     assert entry["level"] == "INFO" and entry["message"] == "hello world" and entry["logger"] == "json.plain"
     assert set(entry["source"]) == {"module", "function", "line"}
-    assert entry["timestamp"].endswith("+00:00")
+    assert datetime.strptime(entry["timestamp"], DATE_FORMAT)
+    assert json.loads(JSONFormatter().format(record))["timestamp"] == text_formatter().formatTime(record, DATE_FORMAT)
 
 
 def test_exceptions_are_serialized():
@@ -77,11 +81,9 @@ def test_stack_info_is_serialized():
 
 
 def test_exception_reaches_json_through_async(capsys):
-    """End to end: ai + async — the traceback survives the queue and lands in the JSON on stderr."""
+    """End to end with ai_agent + ASYNC: the traceback survives the queue and lands in the JSON on stderr."""
 
-    from logger_lab import drain, lab
-
-    logger = lab().with_experiment("AI").with_experiment("ASYNC").build("json.async")
+    logger = lab().with_profile("ai_agent").with_catalyst("ASYNC").build("json.async")
 
     try:
         raise KeyError("missing")
@@ -124,3 +126,41 @@ def test_unserializable_values_fall_back_to_str():
     log_event(logger, logging.INFO, "obj", event="obj", context={"value": object()})
 
     assert "object object at" in json.loads(handler.lines[0])["extra"]["context"]["value"]
+
+
+def test_text_layouts_by_detail():
+    """minimal: level + message; standard: time, name, level, message; verbose: adds module.function:line."""
+
+    record = logging.LogRecord("app", logging.INFO, "/src/app/jobs.py", 42, "done", (), None, func="run")
+
+    assert text_formatter("minimal").format(record) == "INFO: done"
+    assert text_formatter("standard").format(record).endswith(" - app - INFO - done")
+    assert text_formatter("verbose").format(record).endswith(" - app - INFO - jobs.run:42 - done")
+    assert text_formatter().format(record) == text_formatter("standard").format(record)
+    assert set(TEXT_LAYOUTS) == {"minimal", "standard", "verbose"}
+
+
+def test_a_traceback_is_rendered_once_however_many_formatters_see_it():
+    """KN-46: like logging.Formatter, the JSON format caches the traceback in record.exc_text."""
+
+    renders: list[int] = []
+
+    class CountingJSON(JSONFormatter):
+        """Counts how often it renders a traceback."""
+
+        def formatException(self, ei) -> str:
+            """Render as usual, and count it."""
+
+            renders.append(1)
+
+            return super().formatException(ei)
+
+    try:
+        raise ValueError("once")
+    except ValueError:
+        record = logging.LogRecord("x", logging.ERROR, __file__, 1, "failed", (), sys.exc_info())
+
+    first, second = CountingJSON().format(record), CountingJSON().format(record)
+
+    assert len(renders) == 1
+    assert json.loads(first)["exception"]["traceback"] == json.loads(second)["exception"]["traceback"]

@@ -1,49 +1,42 @@
 """
-``logging_kernel`` — low-level infrastructure for logger-lab.
+``logging_kernel``: low-level infrastructure for logger-lab.
 
-Exports every utility that experiments, profiles, and the builder need
-so they can import from a single namespace::
+Exports every utility that outputs, features, formats, catalysts and the builder need
+so they can import from a single namespace.
 """
 
 from logger_lab.logging_kernel.errors import (
     BuilderError,
-    DuplicateExperimentWarning,
-    ExperimentClashError,
-    ExperimentNotFoundError,
-    ExperimentRegistrationError,
+    CompositionError,
     HandlerConfigurationError,
-    InvalidExperimentName,
     InvalidLevelError,
-    InvalidProfileName,
-    InvalidTheoryName,
+    InvalidNameError,
     LabConfigurationError,
     LabError,
     LabRegistryError,
     LogDirectoryError,
     LogFileClashError,
-    ProfileNotFoundError,
-    ProfileRegistrationError,
+    ProfileSuggestionWarning,
+    RegistrationError,
     SharedFileSettingsWarning,
     TheoryNotFoundError,
 )
 from logger_lab.logging_kernel.formatters import (
+    DATE_FORMAT,
+    TEXT_LAYOUTS,
     JSONFormatter,
-    build_file_formatter,
     log_event,
+    text_formatter,
 )
 from logger_lab.logging_kernel.dispatch import (
     AsyncHandler,
-    dispatcher,
     drain,
-    is_dispatcher,
     stop_worker,
 )
 from logger_lab.logging_kernel.handlers import (
     LAB_HANDLERS,
     SHARED_FILES,
-    SharedFileHandler,
-    SharedRotatingFileHandler,
-    SharedTimedRotatingFileHandler,
+    LabFileHandler,
     StayClosedMixin,
     configure_handler,
     clear_handlers,
@@ -54,10 +47,15 @@ from logger_lab.logging_kernel.handlers import (
     share_file_handler,
 )
 from logger_lab.logging_kernel.normalizers import (
-    normalize_profile_name,
+    level_names,
     normalize_level_name,
-    normalize_exp_name,
-    normalize_theory_name,
+    normalize_name,
+)
+from logger_lab.logging_kernel.rollover import (
+    DAYS,
+    UNITS,
+    SizeRule,
+    TimeRule,
 )
 
 __all__ = [
@@ -65,30 +63,27 @@ __all__ = [
     "LabError",
     # registry errors
     "LabRegistryError",
-    "ExperimentNotFoundError",
-    "ProfileNotFoundError",
-    "InvalidExperimentName",
-    "InvalidProfileName",
+    "InvalidNameError",
     "TheoryNotFoundError",
-    "InvalidTheoryName",
+    "RegistrationError",
     # configuration errors
     "LabConfigurationError",
     "InvalidLevelError",
+    "CompositionError",
     "HandlerConfigurationError",
     "LogDirectoryError",
-    "ExperimentClashError",
     "LogFileClashError",
-    "ExperimentRegistrationError",
-    "ProfileRegistrationError",
     # builder errors
     "BuilderError",
     # warnings
-    "DuplicateExperimentWarning",
+    "ProfileSuggestionWarning",
     "SharedFileSettingsWarning",
     # formatters
     "log_event",
     "JSONFormatter",
-    "build_file_formatter",
+    "text_formatter",
+    "TEXT_LAYOUTS",
+    "DATE_FORMAT",
     # handler utilities
     "get_log_dir",
     "clear_handlers",
@@ -99,19 +94,19 @@ __all__ = [
     "share_file_handler",
     "LAB_HANDLERS",
     "SHARED_FILES",
-    "SharedFileHandler",
-    "SharedRotatingFileHandler",
-    "SharedTimedRotatingFileHandler",
+    "LabFileHandler",
     "StayClosedMixin",
+    # rollover
+    "DAYS",
+    "UNITS",
+    "SizeRule",
+    "TimeRule",
     # dispatch
     "AsyncHandler",
-    "dispatcher",
     "drain",
-    "is_dispatcher",
     "stop_worker",
     # normalizers
-    "normalize_exp_name",
+    "level_names",
     "normalize_level_name",
-    "normalize_profile_name",
-    "normalize_theory_name",
+    "normalize_name",
 ]

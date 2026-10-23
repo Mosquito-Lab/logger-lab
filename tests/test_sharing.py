@@ -1,7 +1,6 @@
-"""CR-9: one handler per log file, shared across loggers, with per-module levels and experiments."""
+"""CR-9: one handler per log file, shared across loggers, with per-module levels and compositions."""
 
 import logging
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import pytest
@@ -9,13 +8,7 @@ import pytest
 from logger_lab import LogFileClashError, SharedFileSettingsWarning, lab
 from logger_lab.logging_kernel import LAB_HANDLERS, SHARED_FILES, clear_handlers, file_key
 
-
-def file_handler(logger: logging.Logger) -> logging.FileHandler:
-    """Return *logger*'s one file handler."""
-
-    (handler,) = [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
-
-    return handler
+from helpers import file_handler
 
 
 def test_modules_on_one_file_share_one_handler():
@@ -31,8 +24,8 @@ def test_modules_on_one_file_share_one_handler():
 def test_each_module_keeps_its_own_level():
     """The shared handler has no level; each logger's level filters its own records."""
 
-    chatty = lab().with_experiment("FILE").with_level("DEBUG").build("app.chatty")
-    quiet = lab().with_experiment("FILE").with_level("WARNING").build("app.quiet")
+    chatty = lab().with_output("file").with_level("DEBUG").build("app.chatty")
+    quiet = lab().with_output("file").with_level("WARNING").build("app.quiet")
 
     assert file_handler(chatty).level == logging.NOTSET
 
@@ -46,71 +39,101 @@ def test_each_module_keeps_its_own_level():
     assert "quiet debug" not in text
 
 
-def test_each_module_picks_its_own_experiments():
+def test_each_module_picks_its_own_composition():
     """Modules compose differently and still share the file they have in common."""
 
-    bots = lab().with_profile("conspiracy_theorist").build("app.bots")          # verbose + rotating
-    loaders = lab().with_experiment("ROTATING").with_experiment("AI").build("app.loaders")
+    bots = lab().with_profile("conspiracy_theorist").build("app.bots")  # verbose console + verbose rotating file
+    loaders = (
+        lab().with_profile("ai_agent").with_output("file").with_feature("VERBOSE", on="file").with_feature("ROTATING")
+        .build("app.loaders")
+    )
 
     assert file_handler(bots) is file_handler(loaders)
     assert len(bots.handlers) == 2 and len(loaders.handlers) == 2
 
 
-def test_different_experiment_on_an_open_file_raises():
-    """``FILE`` and ``ROTATING`` can't share one handler — the error names both loggers and the fix."""
+@pytest.mark.parametrize(("second", "wanted", "held"), [
+    (lambda: lab().with_output("file").with_feature("ROTATING"), r"FILE\[TEXT\]\+ROTATING", r"FILE\[TEXT\]"),
+    (lambda: lab().with_output("file").with_format("JSON"), r"FILE\[JSON\]", r"FILE\[TEXT\]"),
+], ids=["plain vs rotating", "text vs JSON"])
+def test_a_different_setup_on_an_open_file_raises_and_leaves_nothing_half_built(second, wanted, held):
+    """One handler can't be both plain and rotating, or both text and JSON. The error names both loggers and the fix."""
 
-    lab().with_experiment("FILE").build("app.loaders")
+    lab().with_output("file").build("app.loaders")
 
-    with pytest.raises(LogFileClashError, match=r"'app.bots' asked for .* as ROTATING, but it is already open as FILE for 'app.loaders'") as err:
-        lab().with_experiment("ROTATING").build("app.bots")
+    clash = f"'app.bots' asked for .* as {wanted}, but it is already open as {held} for 'app.loaders'"
 
-    assert "with_file_args(filename=...)" in str(err.value)
-    assert not [h for h in logging.getLogger("app.bots").handlers if h in LAB_HANDLERS]  # nothing half-built left
+    with pytest.raises(LogFileClashError, match=clash) as err:
+        second().build("app.bots")
+
+    assert "with_output('file', filename=...)" in str(err.value)
+    assert not [h for h in logging.getLogger("app.bots").handlers if h in LAB_HANDLERS]
     assert list(SHARED_FILES.values())[0].owners == {"app.loaders": 1}
 
 
 def test_handlers_logger_lab_did_not_create_are_detached_not_closed():
-    """A rebuild never closes someone else's handler — it may serve other loggers."""
+    """A rebuild never closes someone else's handler, because it may serve other loggers."""
 
-    logger = lab().with_experiment("minimalist").build("app.mixed")
+    logger = lab().with_output("console").build("app.mixed")
     theirs = logging.FileHandler("theirs.log")  # a user's own handler, outside logger-lab
     logger.addHandler(theirs)
 
-    lab().with_experiment("minimalist").build("app.mixed")
+    lab().with_output("console").build("app.mixed")
 
     assert theirs not in logger.handlers and theirs.stream is not None
     theirs.close()
 
 
 def test_different_settings_keep_the_first_and_warn():
-    """A second logger with other sizes joins the open file, which keeps its first settings."""
+    """A second logger with another size or detail joins the open file, which keeps its first settings."""
 
-    first = lab().with_experiment("ROTATING").with_file_args(max_bytes=5_000).build("app.first")
+    first = lab().with_output("file").with_feature("ROTATING", max_bytes=5_000).build("app.first")
 
-    with pytest.warns(SharedFileSettingsWarning, match=r"'app.second' joined .* \(max_bytes=5000\); ignoring max_bytes=1000"):
-        second = lab().with_experiment("ROTATING").with_file_args(max_bytes=1_000).build("app.second")
+    ignored = r"'app.second' joined .* \(max_bytes=5000\); ignoring max_bytes=1000"
+
+    with pytest.warns(SharedFileSettingsWarning, match=ignored):
+        second = lab().with_output("file").with_feature("ROTATING", max_bytes=1_000).build("app.second")
 
     shared = file_handler(second)
 
     assert shared is file_handler(first)
-    assert isinstance(shared, RotatingFileHandler) and shared.maxBytes == 5_000
+    assert shared.size is not None and shared.size.max_bytes == 5_000
+
+    with pytest.warns(SharedFileSettingsWarning, match="detail='standard'.*ignoring detail='minimal'"):
+        lab().with_output("file").with_feature("ROTATING", max_bytes=5_000).with_feature("MINIMAL").build("app.third")
 
 
 def test_sole_user_can_rebuild_its_file_differently():
-    """A logger alone on its file may switch experiment or settings — that's a rebuild, not a clash."""
+    """A logger alone on its file may switch features or settings. That's a rebuild, not a clash."""
 
-    old = file_handler(lab().with_experiment("FILE").build("app.solo"))
-    new = file_handler(lab().with_experiment("ROTATING").build("app.solo"))
+    old = file_handler(lab().with_output("file").build("app.solo"))
+    new = file_handler(lab().with_output("file").with_feature("ROTATING").build("app.solo"))
 
     assert new is not old and old.stream is None
-    assert SHARED_FILES[file_key("logs/app.log")].kind == "ROTATING"
+    assert SHARED_FILES[file_key("logs/app.log")].kind == "FILE[TEXT]+ROTATING"
+
+
+def test_a_file_shares_by_its_whole_setup():
+    """EX-13: the kind names the format and both rotations, and the settings hold every rule's values."""
+
+    (lab().with_output("file").with_format("JSON").with_feature("ROTATING", max_bytes=5_000)
+     .with_feature("TIMED", unit="hours").build("app.both"))
+    shared = SHARED_FILES[file_key("logs/app.log")]
+
+    assert shared.kind == "FILE[JSON]+ROTATING+TIMED"
+    assert shared.settings == {"encoding": "utf-8", "backup_count": 3, "detail": "standard", "max_bytes": 5_000,
+                               "every": 1, "unit": "hour", "day": None, "at": None, "utc": False}
+
+    with pytest.warns(SharedFileSettingsWarning, match="unit='hour'.*ignoring unit='day'"):
+        (lab().with_output("file").with_format("JSON").with_feature("ROTATING", max_bytes=5_000)
+         .with_feature("TIMED").build("app.daily"))
 
 
 def test_file_closes_only_when_its_last_logger_lets_go():
     """Releasing one of two users keeps the file open; releasing the last closes it."""
 
-    a = lab().with_experiment("FILE").build("app.a")
-    b = lab().with_experiment("FILE").build("app.b")
+    a = lab().with_output("file").build("app.a")
+    b = lab().with_output("file").build("app.b")
     handler = file_handler(a)
 
     clear_handlers(a)
@@ -123,19 +146,10 @@ def test_file_closes_only_when_its_last_logger_lets_go():
     assert SHARED_FILES == {}
 
 
-def test_different_paths_are_not_shared():
-    """Sharing is per path — different files get different handlers."""
-
-    a = lab().with_experiment("FILE").with_file_args(filename="a.log").build("app.a")
-    b = lab().with_experiment("FILE").with_file_args(filename="b.log").build("app.b")
-
-    assert file_handler(a) is not file_handler(b)
-
-
 def test_closed_handler_never_reopens_its_file():
     """A record arriving after release is dropped instead of reopening the file (stdlib would reopen)."""
 
-    logger = lab().with_experiment("FILE").build("app.late")
+    logger = lab().with_output("file").build("app.late")
     handler = file_handler(logger)
     record = logger.makeRecord("app.late", logging.INFO, __file__, 1, "late record", (), None)
 

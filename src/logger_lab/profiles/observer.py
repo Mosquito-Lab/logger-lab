@@ -1,35 +1,29 @@
 """
-Observer profile — production-safe, low-noise logging.
+Observer profile: low-noise console output, with the level and message and nothing else.
 
-Applies a single `minimalist_experiment()` handler so only warnings, errors, and
-critical events surface.  The observer stays quiet until something actually matters.
+One console with the ``MINIMAL`` detail feature. The level is ``INFO`` like every logger;
+raise it with ``.with_level("WARNING")`` to hear only what matters.
 """
 
-from logging import WARNING, Logger
+from typing import TYPE_CHECKING
 
-from logger_lab.profiles.base import build_profile
-from logger_lab.experiments.minimalist import minimalist_experiment
+from logger_lab.core.enums import Feature, Output, ProfileType
+from logger_lab.core.specs import ProfileSpec
 
-OBSERVER_EXPERIMENTS = (minimalist_experiment,)  # Built from, in order: one console
+if TYPE_CHECKING:  # type-only: the builder imports the registry, which imports this module
+    from logger_lab.core.builder import LabBuilder
 
 
-def observer(name: str, level: int = WARNING, **kwargs: object) -> Logger:
+def observer(builder: "LabBuilder") -> "LabBuilder":
     """
-    Return a logger configured for production-safe, low-noise output.
+    Console + MINIMAL.
 
-    Uses the ``minimalist`` experiment — plain ``LEVEL: message`` format,
-    default level `logging.WARNING`.
-
-    Args:
-        name:  Logger name, typically ``__name__``.
-        level: Logging level.  Defaults to `logging.WARNING`.
-        **kwargs: File args (``log_dir``, ``filename``, …) forwarded to every experiment.
-    Returns:
-        A configured `logging.Logger` with ``propagate = False``.
     Example::
-        logger = observer(__name__)
-        logger.warning("Disk usage above 90 %%")   # → "WARNING: Disk usage above 90 %"
-        logger.debug("This is silent")              # → (nothing)
+        logger = lab().with_profile("observer").with_level("WARNING").build(__name__)
+        logger.warning("Disk usage above 90%")   # → WARNING  Disk usage above 90%
     """
 
-    return build_profile(name, level, *OBSERVER_EXPERIMENTS, **kwargs)
+    return builder.with_output(Output.CONSOLE).with_feature(Feature.MINIMAL, on=Output.CONSOLE)
+
+
+OBSERVER_SPEC = ProfileSpec(member=ProfileType.OBSERVER, recipe=observer, summary="console + MINIMAL")

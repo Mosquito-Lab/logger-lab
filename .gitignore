@@ -9,8 +9,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Log output written by the experiments
+# Log output (the default log_dir)
 logs/
 
-# IDE (per-user files only; shared .idea settings stay tracked)
-.idea/workspace.xml
+# IDE settings: machine-specific, so never tracked. The project's rules live in the
+# Standards doc and the pyrefly config, which apply in any editor.
+.idea/

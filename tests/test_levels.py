@@ -1,44 +1,39 @@
-"""Levels: what's accepted, what raises, and the default when none is set (INFO; WARNING with minimalist)."""
+"""Levels: what's accepted, what raises, and the one default, INFO, for every logger."""
 
 import logging
 from pathlib import Path
 
 import pytest
 
-from logger_lab import InvalidLevelError, LogDirectoryError, lab
-from logger_lab.core.builder import default_level
-from logger_lab.core.enums import ExperimentType
-from logger_lab.logging_kernel import get_log_dir, normalize_level_name
+from logger_lab import InvalidLevelError, ProfileType, lab
+from logger_lab.logging_kernel import clear_handlers, normalize_level_name
 
 
-@pytest.mark.parametrize(("given", "expected"), [
-    ("debug", logging.DEBUG), ("WARNING", logging.WARNING), ("warn", logging.WARNING),
-    ("fatal", logging.CRITICAL), (logging.ERROR, logging.ERROR), (0, 0), (25, 25),
-])
-def test_accepted_levels(given, expected):
-    """Names (case-insensitive, stdlib aliases too) and any integer 0 or above."""
+# noinspection PyProtectedMember
+def test_accepted_levels(monkeypatch):
+    """Names in any case, the stdlib aliases, custom names, and any integer 0 or above."""
 
-    assert normalize_level_name(given) == expected
+    # addLevelName() writes to logging's two level tables. Copies stand in for them, so the
+    # custom name is gone when the test ends and no later test sees it (TS-8).
+    monkeypatch.setattr(logging, "_levelToName", dict(logging._levelToName))
+    monkeypatch.setattr(logging, "_nameToLevel", dict(logging._nameToLevel))
+    logging.addLevelName(25, "NOTICE")
+
+    for given, expected in [("debug", logging.DEBUG), ("WARN", logging.WARNING), ("fatal", logging.CRITICAL),
+                            ("notice", 25), (logging.ERROR, logging.ERROR), (0, 0), (25, 25)]:
+        assert normalize_level_name(given) == expected
 
 
-@pytest.mark.parametrize("given", ["DEBG", "LOUD", "", "10", -1, 2.5, True, None])
-def test_rejected_levels_raise(given):
-    """KN-2: no silent fallback to INFO — a typo or a wrong type raises, listing the valid names."""
+@pytest.mark.parametrize("given", ["DEBG", "", "10", -1, 2.5, True, None])
+def test_rejected_levels_raise_and_list_the_valid_names(given):
+    """KN-2: no silent fallback to INFO. A typo, a numeric string, a negative number or a wrong type raises."""
 
     with pytest.raises(InvalidLevelError, match="Valid names: DEBUG, INFO, WARNING, ERROR, CRITICAL"):
         normalize_level_name(given)
 
 
-def test_custom_level_names_are_accepted():
-    """A name registered with logging.addLevelName resolves like a built-in one."""
-
-    logging.addLevelName(25, "NOTICE")
-
-    assert normalize_level_name("notice") == 25
-
-
 def test_every_entry_point_validates():
-    """with_level and with_subscriber(level=) both raise on a bad level."""
+    """with_level() and with_subscriber(level=) both raise on a bad level."""
 
     with pytest.raises(InvalidLevelError):
         lab().with_level("DEBG")
@@ -46,53 +41,30 @@ def test_every_entry_point_validates():
         lab().with_subscriber(print, level="LOUD")
 
 
-@pytest.mark.parametrize(("build", "expected"), [
-    (lambda: lab().with_experiment("standard"), logging.INFO),
-    (lambda: lab().with_profile("investigator"), logging.INFO),
-    (lambda: lab().with_profile("observer"), logging.WARNING),
-    (lambda: lab().with_experiment("minimalist"), logging.WARNING),
-    (lambda: lab().with_experiment("minimalist").with_experiment("FILE"), logging.WARNING),
-    (lambda: lab().with_profile("observer").with_level("DEBUG"), logging.DEBUG),
-], ids=["standard", "investigator", "observer", "minimalist", "minimalist+file", "explicit wins"])
-def test_default_level_rule(build, expected):
-    """CR-7: INFO unless minimalist is in the logger (WARNING); with_level() always wins."""
+def test_every_logger_defaults_to_info_and_with_level_wins():
+    """One default for every profile and every hand composition. Quieter or louder is a with_level() away."""
 
-    assert build().build("levels.default").level == expected
+    for profile in ProfileType:
+        logger = lab().with_profile(profile).build(f"levels.{profile.value}")
 
+        assert logger.level == logging.INFO
+        clear_handlers(logger)  # The next profile's file may be set up differently
 
-def test_default_level_is_one_rule():
-    """The rule itself, on a plan."""
+    hand = lab().with_output("file", filename="hand.log").with_feature("TIMED").build("levels.hand")
 
-    assert default_level([ExperimentType.STANDARD]) == logging.INFO
-    assert default_level([ExperimentType.MINIMALIST, ExperimentType.FILE]) == logging.WARNING
+    assert hand.level == logging.INFO
+    assert lab().with_profile("observer").with_level("WARNING").build("levels.quiet").level == logging.WARNING
 
 
-def test_profile_functions_share_the_defaults():
-    """Called directly, profiles default to INFO, and observer to WARNING."""
+def test_handlers_have_no_level_so_the_logger_level_is_the_one_switch(capsys):
+    """Console and file are NOTSET, so a setLevel() after the build reaches both (EX-9: the console kept INFO)."""
 
-    from logger_lab.profiles import investigator, observer
+    logger = lab().with_profile("investigator").with_format("TEXT", on="console").build("levels.switch")
 
-    assert investigator("levels.direct.inv").level == logging.INFO
-    assert observer("levels.direct.obs").level == logging.WARNING
+    assert [h.level for h in logger.handlers] == [logging.NOTSET, logging.NOTSET]
 
+    logger.setLevel(logging.DEBUG)
+    logger.debug("debug after the build")
 
-def test_log_dir_that_is_a_file_raises_log_directory_error():
-    """TS-2: get_log_dir wraps the OSError when the path exists but isn't a directory."""
-
-    Path("not_a_dir").write_text("I'm a file", encoding="utf-8")
-
-    with pytest.raises(LogDirectoryError, match="not_a_dir") as err:
-        get_log_dir("not_a_dir/logs")
-
-    assert isinstance(err.value.__cause__, OSError)
-
-
-def test_build_profile_is_public():
-    """PF-2: custom profiles use logger_lab.profiles.build_profile."""
-
-    from logger_lab.experiments import minimalist_experiment
-    from logger_lab.profiles import build_profile
-
-    logger = build_profile("levels.custom", logging.ERROR, minimalist_experiment)
-
-    assert logger.level == logging.ERROR and len(logger.handlers) == 1
+    assert "debug after the build" in capsys.readouterr().err
+    assert "debug after the build" in Path("logs/app.log").read_text(encoding="utf-8")

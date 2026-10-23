@@ -1,8 +1,12 @@
 """
-Performance theory — timing (idea stage).
+Performance theory: timing (idea stage, rank 4).
 
-A ``@timed`` decorator factory that logs start, end and duration through `log_event`,
-filling the JSON standard's ``context`` field.  Builds on ``TRACE`` context if it exists.
+A ``@timed`` decorator factory that emits lifecycle events: ``started``, then
+``succeeded`` or ``failed`` with the duration in the JSON standard's ``context`` field.
+It depends on ``LIFECYCLE`` for the events and ``TRACE`` for the job ID.
 
-Not registered: selecting it raises `TheoryNotFoundError` until it reaches the trial stage.
+Kind: helper (a decorator).
+
+Selecting it raises `TheoryNotFoundError`. It is never registered, because it is not a
+building block. It is tried in tests instead (Standards §3.4).
 """

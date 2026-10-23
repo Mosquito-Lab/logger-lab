@@ -47,7 +47,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rich", specifier = ">=15.0.0" }]
+requires-dist = [{ name = "rich", specifier = ">=12.6.0" }]
 
 [package.metadata.requires-dev]
 dev = [

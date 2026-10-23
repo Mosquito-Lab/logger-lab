@@ -1,6 +1,6 @@
 # Standards and tracker
 
-**Documentation snapshot: 2026-10-22**
+**Documentation snapshot: 2026-10-23**
 
 This document defines how logger-lab is changed. Every module, function and doc
 is held to it.
@@ -112,8 +112,8 @@ def function(arg: Type) -> ReturnType:
 - Type hints use `X | None`, not `Optional[X]` or `Union[...]`.
 - Use American spelling (`normalize`, `color`, `serialize`).
 - **Don't use a `_` prefix by default.** Only mark something private for a real
-  reason (a name collision, a safety invariant, wiring that is implementation
-  only), and say why in a short comment.
+  reason, and say why in a short comment. Real reasons are a name collision, a
+  safety invariant, or wiring that is implementation only.
 - Anything public from a package is listed in its `__all__`. Anything imported
   into an `__init__` is either exported there or not imported at all.
 - Use section banners (`# Lookup helpers #` boxes) to split longer modules.
@@ -122,12 +122,17 @@ def function(arg: Type) -> ReturnType:
   `DEFAULT_FILENAME = "app.log"  # Log file name inside the log directory`.
   There is no `Final` on module constants; the module docstring says what they
   are for.
+- **Write short, plain sentences.** Join thoughts with a period, not an em
+  dash (—) or a double hyphen (`--`). Split a sentence once it runs past about
+  25 words. PyCharm flags long ones. This holds for docstrings, comments,
+  error messages, docs and chat.
 
 ### 1.5 logger-lab additions to the baseline
 
-- **Every experiment, theory and profile accepts `**kwargs`** (see §3.1). This
-  is the one signature rule that every extension point shares.
-- **Windows is a first-class target.** File-handling behaviour (locks,
+- **Every building block declares its options** (see §3.1). An option it
+  doesn't declare is rejected, never ignored; this is the one rule every
+  extension point shares.
+- **Windows is a first-class target.** File-handling behavior (locks,
   rotation) is verified on Windows, not assumed from POSIX.
 
 ---
@@ -139,24 +144,36 @@ def function(arg: Type) -> ReturnType:
    no custom logger class and no custom sink model. Code that works with
    `logging` keeps working with logger-lab.
 2. **Composition is the point, and `lab()` is the one composer.** There is no
-   one-call shortcut beside it. An experiment is one atomic behaviour (one
-   handler, one format, one destination). A profile only combines experiments.
-   The builder composes profiles, experiments and theories into one logger.
-   Experiments are designed to be built together.
-3. **Experiments never clash.** What gets built together must work together.
-   Every experiment and theory owns one **channel** (`CONSOLE`, `FILE`,
-   `JSON`, `LIVE`, `DISPATCH`), and a logger holds **at most one experiment per
-   channel**. So `standard` and `minimalist` never both print, two handlers
-   never write to one file, and a logger never has two dispatchers.
-   `DISPATCH` isn't an output: its one experiment (`async`) wraps the others.
-   - Two *different* experiments on one channel → `ExperimentClashError`.
-     The message names both, where each came from, and the rule.
-   - The *same* experiment twice → `DuplicateExperimentWarning`. The first
-     instance is kept and the rest are skipped.
-   - A profile that clashes with itself fails at registration (import time).
-     `rotating_file` is `file` plus rotation, so a profile uses one or the
-     other, never both.
-4. **Thread-safe by default.** Every experiment and profile is safe to use
+   one-call shortcut beside it. A logger is composed from **four kinds** of
+   building block, each with its own method:
+   - an **output**: where feedback goes (`with_output`);
+   - a **feature**: extra behavior on an output (`with_feature`);
+   - a **format**: how a record looks (`with_format`);
+   - a **catalyst**: how every record flows (`with_catalyst`).
+
+   A **profile** is a common composition written as builder calls. A **theory**
+   is a building block of any kind still being researched. Options live on the
+   building blocks, and asking for one again configures it.
+3. **Compositions are explicit and never clash.** What gets built together
+   must work together, and nothing is added behind the user's back.
+   - **A feature or format never brings an output.** It attaches to every
+     queued output it fits, or to `on=`'s output; if none fits, that's a
+     `CompositionError` naming the fix (add the output, or use a profile).
+   - **One output of each kind per logger; one detail feature and one format
+     per output, only where they work** (`ROTATING` is file-only, `RICH`
+     console-only, `MINIMAL` / `VERBOSE` don't apply to `JSON`).
+   - **Options are declared.** An undeclared option or a bad value is a
+     `CompositionError`, listing the valid ones.
+   - **One profile per builder, one catalyst per group** (`dispatch`).
+   - **Profiles are the way to simplify.** Composing by hand what a profile
+     already provides warns `ProfileSuggestionWarning`. The suggestion is tested
+     first: the composition is replayed on the profile and must come out the
+     same, so following it never adds anything and never clashes. Anything that
+     would actually break is an error, not a warning.
+   - A profile's recipe pins its features and formats with `on=` wherever a
+     later output could also take them. The tests plan every profile, so a
+     profile that breaks a rule fails there.
+4. **Thread-safe by default.** Every building block and profile is safe to use
    from any number of threads in one process. That means:
    - **Handlers are locked.** Every write goes through the handler's own lock,
      which stdlib handlers already provide.
@@ -169,16 +186,19 @@ def function(arg: Type) -> ReturnType:
    A theory may relax this during trial, but it must be thread-safe, with
    tests, to be promoted (§3.4). Process safety (several processes writing to
    one file) is a separate, opt-in feature; it is not implied.
-5. **One file, one handler.** Inside a logger, the one-per-channel rule
-   applies (§2.3). *Across* loggers, every log file has exactly one handler
-   in the process, shared through `share_file_handler()`. That's what lets
-   each module pick its own experiments and level and still write to one
-   `app.log`.
-   - Same file, same experiment and settings → shared.
-   - Same file, same experiment, different settings → shared with the
-     **first** settings, plus a `SharedFileSettingsWarning`.
-   - Same file, different experiment → `LogFileClashError`. One handler can't
-     be both.
+5. **One file, one handler.** Inside a logger, the composition rules apply
+   (§2.3). *Across* loggers, every log file has exactly one handler in the
+   process, shared through `share_file_handler()`. That's what lets each
+   module pick its own composition and level and still write to one
+   `app.log`. A file's **kind** is its format plus its rotation features
+   (`FILE[TEXT]+ROTATING`).
+   - Same file, same kind and settings → shared.
+   - Same file, same kind, different settings → shared with the **first**
+     settings, plus a `SharedFileSettingsWarning`.
+   - Same file, different kind → `LogFileClashError`. One handler can't be
+     both.
+   - A backup is never overwritten: rotation names a taken backup with a
+     counter instead.
    - A shared handler has no level of its own (`NOTSET`); each logger's level
      filters its own records. It closes when its last logger releases it.
    - logger-lab only ever closes handlers it created. Anything else on a
@@ -193,58 +213,61 @@ def function(arg: Type) -> ReturnType:
    | Putting handlers on a logger (atomic swap) | `logging_kernel.handlers.install_handlers()` |
    | Letting go of a handler (close only when last and ours) | `logging_kernel.handlers.release_handler()` |
    | Detaching every handler from a logger | `logging_kernel.handlers.clear_handlers()` |
-   | Resolving names (enum or string) to members | `logging_kernel.normalizers` |
-   | Registering factories, their channels and profile compositions | `core.registry` (`register_*`) |
-   | The one-experiment-per-channel rule | `core.registry.find_channel_clash()` |
-   | A profile's composition | its module's `*_EXPERIMENTS` tuple, read by both the profile function and the registry |
-   | Assembling a profile's logger for a direct call | `profiles.base.build_profile()` |
-   | The default level when none is set | `core.builder.default_level()` |
-   | Ordering, de-duplicating and clash-checking a composition | `core.builder.LabBuilder.plan()` |
+   | Resolving names (enum or string) to members | `logging_kernel.normalizers.normalize_name()` |
+   | What each building block fits, its options and defaults | its spec (`core.specs`), next to the block |
+   | The built-in tables, and registering a theory | `core.registry` (`OUTPUTS` … `PROFILES`, `register_theory()`) |
+   | A profile's composition | its module's recipe (`ProfileSpec`) |
+   | Checking every spec is well formed and every profile composes | `tests/test_registry.py` |
+   | Every composition rule | `core.builder.LabBuilder.plan()` (and each spec's `check`) |
    | Building the final logger | `core.builder.LabBuilder.build()` |
+   | The default level when none is set | `core.builder.LabBuilder.build()` (always `INFO`) |
+   | Console handlers | `outputs.console.build_console()` |
+   | The file handler, its kind and settings | `outputs.file.build_file()` and `logging_kernel.handlers.LabFileHandler` |
+   | Rollover periods, boundaries and backup labels | `logging_kernel.rollover` (`SizeRule`, `TimeRule`) |
+   | The text layouts | `logging_kernel.formatters.TEXT_LAYOUTS` |
    | The async queue, its one worker thread, and `drain()` | `logging_kernel.dispatch` |
-   | Which factories are dispatchers | `logging_kernel.dispatch.dispatcher` (checked against `DISPATCH` at registration) |
-   | Handing records to subscribers | `experiments.relay.RelayHandler` |
+   | Handing records to subscribers | `outputs.relay.RelayHandler` |
    | Default values (paths, sizes, encoding) | `logging_kernel.constants` |
    | The JSON record schema | `logging_kernel.formatters.JSONFormatter` |
 
 7. **Layering: imports point down only.**
 
    ```text
-   constants ← errors ← formatters / handlers        (logging_kernel, base)
-            ← core.enums
+   constants ← errors ← rollover / formatters / handlers / dispatch   (logging_kernel, base)
+            ← core.enums ← core.specs
             ← logging_kernel.normalizers             (needs enums, lazily if needed)
-            ← experiments / theories
-            ← profiles
-            ← core.registry
+            ← outputs / features / formats / catalysts / theories
+            ← profiles                               (recipes; the builder only as a type)
+            ← core.registry                          (plain tables of the specs)
             ← core.builder
             ← logger_lab/__init__.py
    ```
 
    Nothing in a lower layer imports a higher one at module level.
-8. **Names: enum member or value string, everywhere.** Each experiment,
-   profile and theory can be selected by its enum member
-   (`ExperimentType.ROTATING_FILE`) or by its value string (`"ROTATING"`),
-   case-insensitively. That holds in every builder method:
-   `with_experiment()`, `with_profile()` and `with_theory()`. A member's
-   *name* may differ from its *value* (`ROTATING_FILE` / `"ROTATING"`,
-   `AGENT` / `"AI_AGENT"`, `CONSPIRATOR` / `"CONSPIRACY_THEORIST"`). Docs and
-   examples always show the **value** string.
+8. **Names: enum member or value string, everywhere.** Each building block,
+   profile and theory can be selected by its enum member (`Feature.ROTATING`)
+   or by its value string (`"ROTATING"`), case-insensitively. That holds in
+   every builder method and in `on=`. Each method takes only its own kind;
+   another kind's name is an `InvalidNameError`. A member's *name* may differ
+   from its *value* (`AGENT` / `"AI_AGENT"`, `CONSPIRATOR` /
+   `"CONSPIRACY_THEORIST"`). Docs and examples always show the **value**
+   string.
 9. **Validate once, at the boundary.** Names are normalized in the `with_*`
-   methods. Factories and profile compositions are validated when they are
-   registered. Directories are checked in `get_log_dir()`. Clashes are checked
-   in `plan()`, before `build()` touches the logger. Factories themselves
-   trust their arguments.
+   methods. The built-in specs and profiles are checked by the tests, and a
+   theory when it is registered. Options and composition rules are checked in
+   `plan()`, before `build()` touches the logger. Directories are checked in
+   `get_log_dir()`. An output's `build` trusts the plan it gets.
 10. **The builder is pure until `build()`.** The `with_*` methods only record
    state and return `self`. All I/O (opening files, creating directories)
    happens in `build()`.
-11. **Setup code favours clarity; the emit path favours speed.** Building a
+11. **Setup code favors clarity; the emit path favors speed.** Building a
    logger happens once, so clarity wins there. Formatting and emitting happen
    on every record, so avoid repeated work there (see `JSONFormatter`'s
    one-time `STANDARD_ATTRS`).
-12. **Docs match behaviour**, and that includes the README.
-13. **One default level.** No level set → `INFO`, or `WARNING` when `minimalist`
-   is part of the logger (`core.builder.default_level`). Invalid levels raise
-   `InvalidLevelError`; nothing falls back silently.
+12. **Docs match behavior**, and that includes the README.
+13. **One default level.** No level set → `INFO`, for every logger and every
+   profile; quieter or louder is set intentionally with `with_level()`.
+   Invalid levels raise `InvalidLevelError`; nothing falls back silently.
 
 ---
 
@@ -254,10 +277,12 @@ def function(arg: Type) -> ReturnType:
 
 | Kind | Signature | Must | Must not |
 |---|---|---|---|
-| **Experiment** | `name_experiment(level: int = INFO, **kwargs: object) -> list[Handler]` | Accept and ignore unknown kwargs (including `logger_name`, which the builder always passes). Build handlers through `configure_handler()` and directories through `get_log_dir()`. **A file experiment gets its handler from `share_file_handler()`** (a `StayClosedMixin` handler, `NOTSET` level), passing its `kind` and the settings that must agree. State in its docstring which file args it uses. Be registered with its `Channel`. Be thread-safe (§2.4). | Touch a logger, create directories itself, open a file itself, or print. Produce handlers for more than one channel. |
-| **Theory** | Same as an experiment | Live in `theories/`. Have a `TheoryType` value. Follow the lifecycle in §3.4. Be registered with `register_theory(..., channel)` once it works. | Be registered before it works (see §3.4). |
-| **Profile** | `name(name: str, level: int = INFO, **kwargs: object) -> Logger` | Declare its experiments once as `NAME_EXPERIMENTS = (factory, ...)`, be `build_profile(name, level, *NAME_EXPERIMENTS, **kwargs)`, and be registered with that same tuple. | Combine experiments that clash (§2.3). Its registration fails if it does. |
-| **Dispatcher** | `@dispatcher name_experiment(level, *, handlers, logger_name=None, **kwargs) -> list[Handler]` | Wrap *handlers* (the logger's built outputs) and return the handlers that replace them; release them when released. Be registered on `Channel.DISPATCH`. Raise `BuilderError` if there's nothing to wrap. | Write records on the calling thread's behalf without the order and exit guarantees of `logging_kernel.dispatch`. |
+| **Output** | `OutputSpec(member, build: (OutputPlan) -> list[Handler], options, formats, default_format, check)` | Declare every option with its default, and the formats it accepts. Build handlers through `configure_handler()` and directories through `get_log_dir()`. **A file output gets its handler from `share_file_handler()`** (a `StayClosedMixin` handler, `NOTSET` level), passing its `kind` and the settings that must agree. Interpret the features and format it is given. Be thread-safe (§2.4). | Touch a logger, create directories itself, open a file itself, or print. |
+| **Feature** | `FeatureSpec(member, fits, options, group, formats, check)` | Say which outputs it fits, its exclusive group if any, and the formats it works with. Validate its options in `check`, raising `CompositionError`. | Bring an output with it, or act on an output it doesn't fit. |
+| **Format** | `FormatSpec(member, fits, options)` | Say which outputs it fits; the outputs render it. | Fit an output that can't render it. |
+| **Catalyst** | `CatalystSpec(member, build: (handlers, *, logger_name, options) -> list[Handler], options, group)` | Wrap *handlers* (the logger's built outputs) and return the handlers that replace them; release them when released. Raise `BuilderError` if there's nothing to wrap. | Write records on the calling thread's behalf without the order and exit guarantees of `logging_kernel.dispatch`. |
+| **Theory** | The spec of its kind, with a `TheoryType` member | Live in `theories/`. Follow the lifecycle in §3.4. Be registered with `register_theory(kind, spec)` once it works. | Be registered before it works (see §3.4). |
+| **Profile** | `ProfileSpec(member, recipe: (builder) -> builder, summary)` | Only call the builder; pin features and formats with `on=` where a later output could take them. | Break a composition rule (§2.3). The tests plan every profile and fail if it does. |
 | **Builder method** | `with_x(self, ...) -> "LabBuilder"` | Normalize and record its input, then return `self`. | Do any I/O. |
 
 ### 3.2 Errors
@@ -275,7 +300,8 @@ def function(arg: Type) -> ReturnType:
 - `logger_lab/__init__.py`'s `__all__` lists exactly what consumers import
   from the top level.
 - Subpackage `__init__`s export their own layer's tools
-  (`logger_lab.core`, `logger_lab.logging_kernel`, `logger_lab.experiments`,
+  (`logger_lab.core`, `logger_lab.logging_kernel`, `logger_lab.outputs`,
+  `logger_lab.features`, `logger_lab.formats`, `logger_lab.catalysts`,
   `logger_lab.profiles`).
 - A removal or rename of anything public is listed in `Continuation.md` with
   the version it changed in.
@@ -284,18 +310,31 @@ def function(arg: Type) -> ReturnType:
 
 | Stage | What exists | Registered? |
 |---|---|---|
-| **Idea** | A `theories/name_exp.py` file whose module docstring states the mechanism and the purpose | No |
+| **Idea** | A `theories/name_exp.py` file whose module docstring states the mechanism, the purpose and the likely kind (or "helper") | No |
 | **Placeholder** | Plus a `TheoryType` value | No. Selecting it raises `TheoryNotFoundError` |
-| **Trial** | A working factory that follows §3.1, registered with `register_theory(theory, factory, channel)`, runnable with `python -m logger_lab.theories._test_theory NAME` | Yes, as a theory |
-| **Promoted** | Moved to `experiments/` with an `ExperimentType` value, and its `TheoryType` value removed | Yes, as an experiment |
+| **Trial** | A working spec of its kind that follows §3.1, registered with `register_theory(kind, spec)`, and tried with `with_theory()` in a test | Yes, as a theory |
+| **Promoted** | Moved into its kind's package with a member of that kind's enum, and its `TheoryType` value removed | Yes, as that kind |
 
-**Promotion checklist:** follows §3.1 · has tests (§4) · **is thread-safe,
-with a concurrency test (§2.4)** · docstrings follow §1.3 · has an API
-Reference row · has a README row · shows it can't clash (§2.3, §2.5) · has a
-passing pass row in the cleanliness tracker.
+**Helpers.** Some ideas aren't a building block: `LIFECYCLE` is a function on
+top of `log_event`, `PERFORMANCE` a decorator, and `DB` hooks installed on an
+engine. Their idea file says "helper". A helper can't be selected with
+`with_theory()`, so it skips the Trial stage's registration. It is tried in
+tests, and promoted into the public API beside `log_event`, not into a kind's
+package. Its `TheoryType` value is removed when it is promoted.
+
+**Promotion checklist:**
+- follows §3.1;
+- has tests (§4);
+- **is thread-safe, with a concurrency test (§2.4)**;
+- has docstrings that follow §1.3;
+- has an API Reference row and a README row;
+- shows it can't clash (§2.3, §2.5);
+- has a passing row in the cleanliness tracker.
 
 The lifecycle is implemented (Step 5, 2026-10-22). Theories are selected with
-`with_theory(theory, **options)`, by member or value string. *options* reach only that theory's factory.
+`with_theory(theory, on=None, **options)`, by member or value string, and act
+as the kind they were registered as. `TIMED_FILE` was the first promotion: it
+became the `TIMED` feature (2026-10-22).
 
 ---
 
@@ -319,24 +358,40 @@ uv run pyrefly check
   closed afterwards. `tests/conftest.py` enforces this: a test fails if it
   leaves a file handler pointing inside the repo, and the run fails if any
   `*.log*` file appears there.
-- **What must be pinned:** every enum member, selected by member and by value
-  string, through every entry point · every experiment's handler type and file
-  args · every profile's experiments · clash detection · file sharing and
-  release · thread safety under load (many threads, rotation, rebuilds) · the
-  JSON schema · every error path.
+- **What must be pinned:**
+  - every enum member of every kind, selected by member and by value string,
+    through every entry point;
+  - every profile's composition;
+  - every composition rule and its message;
+  - options: defaults, merging, unknown names and bad values;
+  - the suggestion warning;
+  - the console's stream, formats and detail;
+  - file formats (JSON lines);
+  - rotation: every `unit=`, with `every=`, `day=`, `at=` and `utc=`,
+    calendar anchoring, combined naming that never overwrites, and retention;
+  - file sharing and release;
+  - thread safety under load (many threads, rotation, rebuilds);
+  - the JSON schema;
+  - every error path.
 - **No leaks:** after every test, the shared file table must be empty. Every
   file a test opened was released.
 - **A concurrency test must be able to fail.** Check it once against the bug
   it guards (for example, with sharing patched out, the rotation test loses
   records and hits `WinError 32`).
-- **Recorded baseline (2026-10-22, Windows, Python 3.10):** `pytest` **181
-  passed** (the concurrency tests passed 5 runs in a row). `pyrefly`
-  **0 errors, 0 warnings, 3 suppressed**: two deliberate wrong-type calls in
-  tests, and one `inspect.currentframe()` that pyrefly treats as possibly
-  `None`.
-- **Integration check for the `gui` profile:** run against LabFrame's own
-  environment (real PySide6), a record logged on a worker thread reaches a Qt
-  slot on the GUI thread (`Continuation.md`, 0.2.0 changes).
+- **Tests are few and pointed.** One test per behavior, with edge cases as their
+  own cases. A list of members or values is looped inside one test, not
+  parametrized into dozens. A bug fix lands with a test shown to fail without
+  the fix.
+- **Recorded baseline (2026-10-23, Windows):** `pytest` **190 passed** on Python
+  3.10, 3.13 and 3.14 (the suite was redesigned down from 316). `pyrefly`
+  reports **0 diagnostics and 10 suppressed errors**, from six
+  `pyrefly: ignore` comments. Three read option values already validated in
+  `outputs/file.py`. One marks a deliberate wrong-type call in a test. Two are
+  `inspect.currentframe()` calls that pyrefly treats as possibly `None`. Every
+  README example runs on its own, with warnings as errors.
+- **Integration check for the `gui` profile:** run it in LabFrame's own
+  environment, with real PySide6. A record logged on a worker thread must reach
+  a Qt slot on the GUI thread (`Continuation.md`, 0.2.0 changes).
 
 ---
 
@@ -344,30 +399,30 @@ uv run pyrefly check
 
 | Workstream | Status | Current note |
 |---|---|---|
-| Experiments (8) | Done | Each registered with its channel; `relay` and `async` added after `3adfa9c`. Cleanliness review pending (pass 3) |
-| Profiles (5) | Done | Declared `*_EXPERIMENTS` tuples. `gui` added after `3adfa9c` for LabFrame |
-| Builder (`lab()`, the only composer) | Done | `with_file_args()`, `with_theory()`, `with_subscriber()`, `plan()`; `get_logger()` removed (D-19) |
-| Async dispatch | Done (0.2.0) | One worker thread per process, tracebacks kept, `drain()`, drained at exit |
-| Composition rules (one per channel, duplicates warn) | Done 2026-10-22 | Per logger (§2.3) |
-| One file, one handler, across loggers (`CR-9`) | Done 2026-10-22 | `share_file_handler()`; per-module levels and experiments (§2.5) |
+| The four kinds (D-21) | Done 2026-10-22 | Outputs (3), features (4), formats (3), catalysts (1), each with its own spec, method and options; experiments and channels removed. Cleanliness pass 3 closed 2026-10-23 |
+| Profiles (5) | Done 2026-10-22 | Recipes of builder calls, planned by the tests; `build_profile` and the profile functions removed |
+| Builder (`lab()`, the only composer) | Done 2026-10-22 | `with_output/feature/format/catalyst()`, `with_theory()`, `with_subscriber()`, `plan()`; `with_file_args()` and `get_logger()` removed |
+| Async dispatch | Done (0.2.0) | The `ASYNC` catalyst: one worker thread per process, tracebacks kept, `drain()`, drained at exit |
+| Composition rules | Done 2026-10-22 | Explicit: no implicit outputs, `on=`, groups, declared options, `ProfileSuggestionWarning` (§2.3) |
+| One file, one handler, across loggers (`CR-9`) | Done 2026-10-22 | `share_file_handler()` keyed by kind (format + rotation); per-module levels and compositions (§2.5) |
+| Rotation (`ROTATING`, `TIMED`, both) | Done 2026-10-22 | `LabFileHandler` + `rollover.py`; `schedule`-style options (`every=`, `unit=`, `day=`, `at=`, `utc=`), calendar-anchored; backups never overwritten |
 | Thread safety (D-9) | Done 2026-10-22 | Atomic handler swaps (`CR-10`), stay-closed file handlers, concurrency tests (`TS-4`) |
 | Handler closing | Done 2026-10-22 | Released when last, closed only if logger-lab created it |
-| Name resolution (enum + value) | Done | Experiments, profiles and theories; pinned by tests |
+| Name resolution (enum + value) | Done | Every kind, profiles, theories and `on=`; pinned by tests |
 | Theory system | Done 2026-10-22 | Lifecycle §3.4 |
-| `TIMED_FILE` theory | **Trial** | Registered and tested; promotion pending (`Continuation.md` §3) |
+| `TIMED_FILE` theory | Promoted 2026-10-22 | Now the `TIMED` feature |
 | Theories `TRACE` … `DB` | Placeholder | Ranked in `Continuation.md` §3 |
-| Test and type-check baseline | Done | 181 passed · pyrefly clean |
+| Test and type-check baseline | Done | 190 passed (redesigned 2026-10-23) · pyrefly clean |
 | LabFrame adoption of the `gui` profile | Not started | A LabFrame-side change, once 0.2.0 is published |
 | Standards (this doc) | Done 2026-10-22 | Baseline §1 to be mirrored into LabFrame and Project A |
-| Cleanliness passes | Paused | Every flagged finding was fixed on 2026-10-22; the passes still score and re-check each file |
-| README | Done 2026-10-22 | |
+| Cleanliness passes | Done 2026-10-23 | Round 1: all eight passes closed and every finding fixed (`Cleanliness_Tracker.md`) |
+| README | Done 2026-10-23 | Re-checked against the code in pass 8 |
 
 ---
 
 ## 6. Immediate priority
 
-Async, relay, the `gui` profile and the `TIMED_FILE` trial (all still 0.2.0)
-are built and verified, including against LabFrame's real PySide6. Next: the owner
-reviews the preview and commits. Then come LabFrame's adoption of the `gui`
-profile, `TIMED_FILE` promotion, and the cleanliness passes (paused by the
-owner, 2026-10-22).
+0.2.0 is built, verified and through round 1 of the cleanliness passes. Next,
+the owner commits it, then merges to `main` and publishes when ready. After
+that comes LabFrame's adoption of the `gui` profile (its `channel.py` still
+uses 0.1's `get_logger`), then the feedback layer (`Continuation.md` §3).
